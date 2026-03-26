@@ -38,8 +38,10 @@ function loadEvents() {
 function logEvent(evt) {
   const events = loadEvents();
   const tenMinsAgo = Date.now() - 600000;
+  // Allow ETA updates through even for same destination (but not within 10 mins)
   const dup = events.some(e =>
     e.mmsi === evt.mmsi && e.destination === evt.destination &&
+    e.eta === evt.eta &&
     new Date(e.timestamp).getTime() > tenMinsAgo
   );
   if (dup) return;
@@ -77,8 +79,6 @@ function inspectMessage(raw) {
     const mmsi = String(meta.MMSI_String || meta.MMSI || '');
     const dest = (sd.Destination || '').trim().toUpperCase();
     if (!mmsi || !dest || dest === 'UNKNOWN' || dest === '0') return;
-    if (lastDest[mmsi] === dest) return;
-    lastDest[mmsi] = dest;
 
     let etaStr = null;
     if (sd.Eta) {
@@ -89,10 +89,18 @@ function inspectMessage(raw) {
       }
     }
 
+    const destChanged = lastDest[mmsi] !== dest;
+    const etaChanged  = etaStr && lastDest[mmsi + '_eta'] !== etaStr;
+    if (!destChanged && !etaChanged) return;
+
+    lastDest[mmsi] = dest;
+    if (etaStr) lastDest[mmsi + '_eta'] = etaStr;
+
     logEvent({
       mmsi, destination: dest, eta: etaStr,
       lat: meta.latitude ?? null, lng: meta.longitude ?? null,
       timestamp: new Date().toISOString(),
+      destChanged,
     });
   } catch (e) {}
 }
