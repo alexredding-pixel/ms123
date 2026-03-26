@@ -1,5 +1,5 @@
-[phases.build]
-cmds = ["npm install"]
+[phases.install]
+cmds = ["npm install --include=dev"]
 
 [start]
 cmd = "node ais-proxy.js"
