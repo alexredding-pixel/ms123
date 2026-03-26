@@ -1,0 +1,12 @@
+{
+  "name": "maritime-sentinel-proxy",
+  "version": "1.0.0",
+  "description": "AIS WebSocket proxy for Maritime Sentinel",
+  "main": "ais-proxy.js",
+  "scripts": {
+    "start": "node ais-proxy.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
