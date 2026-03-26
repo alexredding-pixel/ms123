@@ -33,10 +33,11 @@ wss.on('connection', (browserSocket) => {
     console.log('[proxy] Connected to aisstream.io');
   });
 
-  // Forward messages from aisstream → browser
-  aisSocket.on('message', (data) => {
+  // Forward messages from aisstream to browser, always as UTF-8 string
+  aisSocket.on('message', (data, isBinary) => {
     if (browserSocket.readyState === WebSocket.OPEN) {
-      browserSocket.send(data);
+      const str = isBinary ? data.toString('utf8') : data.toString();
+      browserSocket.send(str);
     }
   });
 
