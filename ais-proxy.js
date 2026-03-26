@@ -31,6 +31,15 @@ wss.on('connection', (browserSocket) => {
 
   aisSocket.on('open', () => {
     console.log('[proxy] Connected to aisstream.io');
+    // Keep Railway connection alive with a ping every 30s
+    const keepAlive = setInterval(() => {
+      if (aisSocket.readyState === WebSocket.OPEN) {
+        aisSocket.ping();
+      } else {
+        clearInterval(keepAlive);
+      }
+    }, 30000);
+    aisSocket.on('close', () => clearInterval(keepAlive));
   });
 
   // Forward messages from aisstream to browser, always as UTF-8 string
