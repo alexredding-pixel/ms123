@@ -285,7 +285,9 @@ function fetchVesselFinder(mmsi) {
           if (lat && lng) {
             resolve({ name, lat, lng, cog, sog, dest, navStatus });
           } else {
-            console.log(`[fallback] no position for ${mmsi} — dest:${dest} name:${name}`);
+            // Log all keys so we can find the coordinate field names
+            console.log(`[fallback] keys for ${mmsi}: ${Object.keys(j).join(',')}`);
+            console.log(`[fallback] no position for ${mmsi} — dest:${dest} name:${name} y:${j.y} x:${j.x} lat:${j.lat} lon:${j.lon} la:${j.la} lo:${j.lo}`);
             resolve(null);
           }
         } catch(e) {
