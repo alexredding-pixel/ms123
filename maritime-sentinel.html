@@ -52,6 +52,61 @@
   --background: #f8f9fa;
 }
 
+/* ── DARK MODE — medium blue tones ──────── */
+body.dark-mode {
+  --primary: #c8dcff;
+  --primary-container: #2a4a80;
+  --on-primary: #0a1f3d;
+  --on-primary-container: #c8dcff;
+  --primary-fixed: #2a4a80;
+  --primary-fixed-dim: #1e3a6a;
+  --on-primary-fixed: #c8dcff;
+  --secondary: #ffbdaa;
+  --secondary-container: #7a2a15;
+  --on-secondary: #7a2a15;
+  --on-secondary-container: #ffbdaa;
+  --tertiary-fixed: #3a6e3a;
+  --tertiary-fixed-dim: #2a5a2a;
+  --on-tertiary-fixed: #c0f4b8;
+  --on-tertiary-fixed-variant: #8ee088;
+  --on-tertiary-container: #8ee088;
+  --error: #ffb4ab;
+  --error-container: #7a2020;
+  --on-error-container: #ffb4ab;
+  --surface: #1a2232;
+  --surface-bright: #243045;
+  --surface-dim: #111926;
+  --surface-container-lowest: #111926;
+  --surface-container-low: #1a2335;
+  --surface-container: #1f2a3e;
+  --surface-container-high: #263248;
+  --surface-container-highest: #2e3a52;
+  --on-surface: #dce8ff;
+  --on-surface-variant: #a8c0e0;
+  --outline: #6a88b0;
+  --outline-variant: #2a3a55;
+  --surface-tint: #c8dcff;
+  --on-background: #dce8ff;
+  --background: #1a2232;
+  background: var(--surface-container-low);
+  color: var(--on-surface);
+}
+body.dark-mode .sidebar        { background: #111926; border-right: 1px solid #1f2a3e; }
+body.dark-mode .topbar         { background: #111926; border-bottom-color: #1f2a3e; }
+body.dark-mode .alerts-panel   { background: #1a2d4a; }
+body.dark-mode .table-card     { background: var(--surface-container-low); }
+body.dark-mode .search-wrap    { background: var(--surface-container-high); }
+body.dark-mode .map-bg         { background: linear-gradient(145deg,#1a2d4a 0%,#111926 100%); }
+body.dark-mode .sidebar-logo h1 { color: #c8dcff; }
+body.dark-mode .sidebar-logo p  { color: #6a88b0; }
+body.dark-mode .nav-item        { color: #a8c0e0; }
+body.dark-mode .nav-item:hover  { background: rgba(200,220,255,0.08); color: #c8dcff; }
+body.dark-mode .nav-item.active { background: rgba(200,220,255,0.15); color: #c8dcff; }
+body.dark-mode .new-shipment-btn { background: #2a4a80; color: #c8dcff; }
+body.dark-mode .detail-panel   { background: #1a2335; }
+body.dark-mode .add-modal      { background: #1a2335; }
+body.dark-mode .dropdown-menu  { background: #1f2a3e; border-color: #2a3a55; }
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body {
@@ -300,7 +355,7 @@ html, body {
   border-radius: 24px;
   box-shadow: 0 20px 40px rgba(25,28,29,0.04);
   overflow: hidden; position: relative;
-  min-height: 360px;
+  height: 420px;
 }
 
 .map-bg {
@@ -446,36 +501,84 @@ html, body {
   padding: 22px 20px;
   display: flex; flex-direction: column;
   box-shadow: 0 20px 40px rgba(0,23,54,0.08);
+  /* Fixed height — sized for 4 compact alert items + footer */
+  height: 420px;
 }
 .alerts-title {
   font-size: 0.5625rem; font-weight: 800; letter-spacing: 0.2em;
   text-transform: uppercase; color: rgba(0,23,54,0.45);
-  margin-bottom: 16px;
+  margin-bottom: 12px; flex-shrink: 0;
 }
+/* Scrollable alerts list — clips overflow */
+#alertsList {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none; /* Firefox */
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+#alertsList::-webkit-scrollbar { display: none; }
+
+/* Compact by default, expands on hover */
 .alert-item {
-  display: flex; align-items: flex-start; gap: 12px;
-  padding: 12px; border-radius: 12px;
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 10px;
   background: rgba(255,255,255,0.7);
   border: 1px solid rgba(0,23,54,0.08);
-  margin-bottom: 10px;
+  cursor: pointer;
+  /* Fixed compact height */
+  height: 44px; overflow: hidden;
+  transition: height 0.22s ease, padding 0.22s ease, box-shadow 0.15s;
+  flex-shrink: 0;
   animation: slideIn 0.4s ease-out both;
 }
-.alert-item:nth-child(2) { animation-delay: 0.1s; }
-.alert-item:nth-child(3) { animation-delay: 0.2s; }
+.alert-item:hover {
+  height: auto;
+  min-height: 62px;
+  overflow: visible;
+  padding: 10px 12px;
+  box-shadow: 0 4px 16px rgba(0,23,54,0.10);
+  z-index: 2;
+  position: relative;
+  align-items: flex-start;
+}
 @keyframes slideIn {
   from { opacity: 0; transform: translateX(10px); }
   to { opacity: 1; transform: translateX(0); }
 }
 .alert-icon {
-  width: 36px; height: 36px; border-radius: 9px; flex-shrink: 0;
+  width: 28px; height: 28px; border-radius: 7px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
+  transition: width 0.22s, height 0.22s;
 }
-.alert-icon .material-symbols-outlined { font-size: 18px; }
+.alert-item:hover .alert-icon { width: 32px; height: 32px; }
+.alert-icon .material-symbols-outlined { font-size: 16px; }
+.alert-item:hover .alert-icon .material-symbols-outlined { font-size: 18px; }
 .alert-icon.warning { background: var(--secondary-container); color: white; }
 .alert-icon.success { background: var(--tertiary-container); color: var(--on-tertiary-container); }
 .alert-icon.info { background: rgba(0,23,54,0.1); color: var(--primary); }
-.alert-text .title { font-size: 0.875rem; font-weight: 700; color: var(--primary); line-height: 1.25; }
-.alert-text .sub { font-size: 0.6875rem; color: rgba(0,23,54,0.5); margin-top: 3px; }
+/* Compact text — single line clipped */
+.alert-text { min-width: 0; overflow: hidden; }
+.alert-text .title {
+  font-size: 0.8125rem; font-weight: 700; color: var(--primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  line-height: 1.2;
+}
+.alert-item:hover .alert-text .title {
+  white-space: normal; text-overflow: clip; overflow: visible;
+}
+.alert-text .sub {
+  font-size: 0.625rem; color: rgba(0,23,54,0.5); margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-height: 0; opacity: 0;
+  transition: max-height 0.2s ease, opacity 0.2s ease;
+}
+.alert-item:hover .alert-text .sub {
+  white-space: normal; max-height: 60px; opacity: 1;
+  text-overflow: clip; overflow: visible;
+}
 
 .alerts-spacer { flex: 1; }
 .alerts-footer {
@@ -816,6 +919,80 @@ tr.selected .row-chevron { background: var(--primary-fixed); color: var(--primar
   color: var(--on-primary-container);
 }
 
+/* ── LOG TABLE ───────────────────────────── */
+.log-table-header {
+  display: grid;
+  grid-template-columns: 200px 1fr 100px 110px 36px;
+  gap: 12px; align-items: center;
+  padding: 8px 16px;
+  font-size: 0.5625rem; font-weight: 800; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--on-surface-variant);
+  margin-bottom: 4px;
+}
+.log-row {
+  background: var(--surface-container-low);
+  border-radius: 12px;
+  margin-bottom: 6px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.log-row:hover { background: var(--surface-container); }
+.log-row-main {
+  display: grid;
+  grid-template-columns: 200px 1fr 100px 110px 36px;
+  gap: 12px; align-items: center;
+  padding: 14px 16px;
+}
+.log-col-id    { min-width: 0; }
+.log-col-route { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.log-col-slip  { }
+.log-col-date  { white-space: nowrap; }
+.log-col-chevron { display: flex; justify-content: flex-end; }
+
+/* Expandable drawer */
+.log-drawer {
+  max-height: 0; overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+.log-drawer.open { max-height: 600px; }
+.log-drawer-inner {
+  padding: 0 16px 16px;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+}
+.log-drawer-section { }
+.log-drawer-label {
+  font-size: 0.5625rem; font-weight: 800; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--on-surface-variant);
+  margin-bottom: 10px;
+  padding-top: 4px;
+  border-top: 1px solid var(--surface-container-high);
+}
+
+/* ── SETTINGS BUTTONS ───────────────────── */
+.theme-btn {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 14px; border-radius: 10px; border: 1.5px solid var(--outline-variant);
+  background: var(--surface-container-lowest); color: var(--on-surface);
+  font-size: 0.8125rem; font-weight: 700; font-family: inherit; cursor: pointer;
+  transition: all 0.15s;
+}
+.theme-btn:hover { border-color: var(--primary); color: var(--primary); }
+.theme-btn.active-theme {
+  background: var(--primary); color: white; border-color: var(--primary);
+}
+.perpage-btn {
+  width: 44px; height: 36px; border-radius: 10px;
+  border: 1.5px solid var(--outline-variant);
+  background: var(--surface-container-lowest); color: var(--on-surface);
+  font-size: 0.875rem; font-weight: 700; font-family: inherit; cursor: pointer;
+  transition: all 0.15s;
+}
+.perpage-btn:hover { border-color: var(--primary); color: var(--primary); }
+.perpage-btn.active-perpage {
+  background: var(--primary); color: white; border-color: var(--primary);
+}
+
 /* ── ADD SHIPMENT MODAL ──────────────────── */
 .add-modal-backdrop {
   position: fixed; inset: 0; z-index: 200;
@@ -915,19 +1092,7 @@ tr.selected .row-chevron { background: var(--primary-fixed); color: var(--primar
 .btn-secondary:hover { background: var(--surface-container-highest); }
 
 /* ── FAB ─────────────────────────────── */
-.fab {
-  position: fixed; bottom: 28px; right: 28px;
-  width: 56px; height: 56px; border-radius: 50%;
-  background: var(--primary);
-  color: white; border: none; cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 8px 28px rgba(0,23,54,0.3);
-  z-index: 60;
-  transition: all 0.18s;
-}
-.fab:hover { transform: scale(1.08); box-shadow: 0 12px 36px rgba(0,23,54,0.4); }
-.fab:active { transform: scale(0.95); }
-.fab .material-symbols-outlined { font-size: 26px; }
+
 
 /* ── RESPONSIVE OVERLAY WHEN PANEL OPEN ─── */
 body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1); }
@@ -942,23 +1107,15 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
     <p>Vessel Tracking Authority</p>
   </div>
   <nav class="nav-items">
-    <a class="nav-item active" href="#">
+    <a class="nav-item active" id="navDashboard" href="#">
       <span class="material-symbols-outlined fill-icon">dashboard</span>
       Dashboard
     </a>
-    <a class="nav-item" href="#">
-      <span class="material-symbols-outlined">map</span>
-      Container Map
+    <a class="nav-item" id="navLog" href="#">
+      <span class="material-symbols-outlined">history</span>
+      Log
     </a>
-    <a class="nav-item" href="#">
-      <span class="material-symbols-outlined">sailing</span>
-      Shipments
-    </a>
-    <a class="nav-item" href="#">
-      <span class="material-symbols-outlined">analytics</span>
-      Reports
-    </a>
-    <a class="nav-item" href="#">
+    <a class="nav-item" id="navSettings" href="#">
       <span class="material-symbols-outlined">settings</span>
       Settings
     </a>
@@ -980,23 +1137,30 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
 
 <!-- TOPBAR -->
 <header class="topbar">
-  <div class="search-wrap">
-    <span class="material-symbols-outlined">search</span>
-    <input type="text" placeholder="Search by Container ID, Vessel, or Origin…"/>
-  </div>
-  <div class="topbar-right">
-    <button class="icon-btn">
-      <span class="material-symbols-outlined">notifications</span>
-      <span class="notif-dot"></span>
-    </button>
-    <button class="icon-btn">
+  <div class="topbar-right" style="margin-left:auto;">
+    <button class="icon-btn" id="helpBtn" title="Help & guidance">
       <span class="material-symbols-outlined">help_outline</span>
     </button>
     <div class="divider-v"></div>
-    <button class="fleet-selector">
-      Global Fleet
-      <span class="material-symbols-outlined">expand_more</span>
-    </button>
+    <div style="position:relative;">
+      <button class="fleet-selector" id="fleetSelectorBtn">
+        <span class="material-symbols-outlined" style="font-size:16px;" id="fleetIcon">directions_boat</span>
+        <span id="fleetLabel">Sea Freight</span>
+        <span class="material-symbols-outlined">expand_more</span>
+      </button>
+      <div class="dropdown-menu" id="fleetMenu" style="display:none;min-width:180px;">
+        <div class="dropdown-section-title">Freight mode</div>
+        <label class="dropdown-item" id="fleetOptSea" style="font-weight:700;color:var(--primary);">
+          <span class="material-symbols-outlined" style="font-size:18px;">directions_boat</span>
+          Sea Freight
+        </label>
+        <label class="dropdown-item" id="fleetOptAir" style="color:var(--on-surface-variant);">
+          <span class="material-symbols-outlined" style="font-size:18px;">flight</span>
+          Air Freight
+          <span style="margin-left:auto;font-size:0.625rem;font-weight:800;letter-spacing:0.08em;background:var(--surface-container-high);color:var(--on-surface-variant);padding:2px 7px;border-radius:4px;">SOON</span>
+        </label>
+      </div>
+    </div>
     <div class="divider-v"></div>
     <div id="connBadgeBtn" title="Click to configure API key" style="display:flex;align-items:center;gap:7px;padding:7px 13px;border-radius:10px;cursor:pointer;background:rgba(0,0,0,0.04);transition:background 0.15s;">
       <span class="conn-dot" style="width:8px;height:8px;border-radius:50%;background:#9e9e9e;flex-shrink:0;"></span>
@@ -1060,7 +1224,7 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
           <div>
             <div class="map-stat-label">
               <span class="material-symbols-outlined">language</span>
-              Live Fleet Tracking
+              Fleet Overview
             </div>
             <div class="map-big-num" id="fleetCount">--</div>
             <div style="font-size:.75rem;color:var(--primary);font-weight:700;margin-bottom:10px;">Vessels Tracked</div>
@@ -1182,17 +1346,127 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
       </div>
 
       <div class="pagination">
-        <p class="page-info">Showing <strong>1–25</strong> of 1,248 shipments</p>
-        <div class="page-btns">
-          <button class="page-btn disabled"><span class="material-symbols-outlined">chevron_left</span></button>
-          <button class="page-btn active">1</button>
-          <button class="page-btn disabled"><span class="material-symbols-outlined">chevron_right</span></button>
-        </div>
+        <p class="page-info" id="pageInfo"></p>
+        <div class="page-btns" id="pageBtns"></div>
       </div>
     </div>
 
   </div>
 </main>
+
+<!-- LOG SCREEN -->
+<div id="logScreen" style="display:none;flex:1;overflow-y:auto;padding:56px 40px 32px;background:var(--surface-container-lowest);">
+  <div style="max-width:1100px;margin:0 auto;">
+
+    <div style="margin-bottom:28px;">
+      <h2 style="font-size:1.25rem;font-weight:900;color:var(--primary);margin:0 0 4px;">Shipment Log</h2>
+      <p style="font-size:0.875rem;color:var(--on-surface-variant);margin:0;">Completed shipments with full port-stop history and delay analysis.</p>
+    </div>
+
+    <!-- Summary stats -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:28px;" id="logStats">
+      <div style="background:var(--surface-container-low);border-radius:16px;padding:20px;">
+        <div style="font-size:0.625rem;font-weight:800;letter-spacing:0.14em;text-transform:uppercase;color:var(--on-surface-variant);margin-bottom:8px;">Completed</div>
+        <div id="logStatCompleted" style="font-size:1.75rem;font-weight:900;color:var(--primary);">0</div>
+      </div>
+      <div style="background:var(--surface-container-low);border-radius:16px;padding:20px;">
+        <div style="font-size:0.625rem;font-weight:800;letter-spacing:0.14em;text-transform:uppercase;color:var(--on-surface-variant);margin-bottom:8px;">Avg delay</div>
+        <div id="logStatAvgDelay" style="font-size:1.75rem;font-weight:900;color:var(--primary);">—</div>
+      </div>
+      <div style="background:var(--surface-container-low);border-radius:16px;padding:20px;">
+        <div style="font-size:0.625rem;font-weight:800;letter-spacing:0.14em;text-transform:uppercase;color:var(--on-surface-variant);margin-bottom:8px;">On-time rate</div>
+        <div id="logStatOnTime" style="font-size:1.75rem;font-weight:900;color:var(--primary);">—</div>
+      </div>
+      <div style="background:var(--surface-container-low);border-radius:16px;padding:20px;">
+        <div style="font-size:0.625rem;font-weight:800;letter-spacing:0.14em;text-transform:uppercase;color:var(--on-surface-variant);margin-bottom:8px;">Most delayed port</div>
+        <div id="logStatWorstPort" style="font-size:1rem;font-weight:900;color:var(--secondary);margin-top:6px;">—</div>
+      </div>
+    </div>
+
+    <!-- Completed shipments list -->
+    <div id="logList"></div>
+
+    <!-- Empty state -->
+    <div id="logEmpty" style="text-align:center;padding:80px 40px;">
+      <div style="font-size:3rem;margin-bottom:16px;">📋</div>
+      <div style="font-size:1.125rem;font-weight:700;color:var(--primary);margin-bottom:8px;">No completed shipments yet</div>
+      <div style="font-size:0.875rem;color:var(--on-surface-variant);max-width:420px;margin:0 auto;line-height:1.7;">
+        When you mark a shipment as arrived, it moves here with its full history — every port stop, AIS update, and delay logged for analysis.
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- SETTINGS SCREEN -->
+<div id="settingsScreen" style="display:none;flex:1;overflow-y:auto;padding:56px 40px 32px;background:var(--surface-container-lowest);">
+  <div style="max-width:640px;margin:0 auto;">
+
+    <div style="margin-bottom:32px;">
+      <h2 style="font-size:1.25rem;font-weight:900;color:var(--primary);margin:0 0 4px;">Settings</h2>
+      <p style="font-size:0.875rem;color:var(--on-surface-variant);margin:0;">Customise your Maritime Sentinel experience.</p>
+    </div>
+
+    <!-- Appearance -->
+    <div style="background:var(--surface-container-low);border-radius:16px;padding:24px;margin-bottom:16px;">
+      <div style="font-size:0.625rem;font-weight:800;letter-spacing:0.16em;text-transform:uppercase;color:var(--on-surface-variant);margin-bottom:16px;">Appearance</div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div style="font-size:0.9375rem;font-weight:700;color:var(--on-surface);">Theme</div>
+          <div style="font-size:0.8125rem;color:var(--on-surface-variant);margin-top:3px;">Choose between light and dark interface</div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button id="themeLightBtn" class="theme-btn active-theme" onclick="setTheme('light')">
+            <span class="material-symbols-outlined" style="font-size:18px;">light_mode</span>
+            Light
+          </button>
+          <button id="themeDarkBtn" class="theme-btn" onclick="setTheme('dark')">
+            <span class="material-symbols-outlined" style="font-size:18px;">dark_mode</span>
+            Dark
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Shipments per page -->
+    <div style="background:var(--surface-container-low);border-radius:16px;padding:24px;margin-bottom:16px;">
+      <div style="font-size:0.625rem;font-weight:800;letter-spacing:0.16em;text-transform:uppercase;color:var(--on-surface-variant);margin-bottom:16px;">Dashboard</div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div style="font-size:0.9375rem;font-weight:700;color:var(--on-surface);">Shipments per page</div>
+          <div style="font-size:0.8125rem;color:var(--on-surface-variant);margin-top:3px;">Number of shipments shown in the dashboard table</div>
+        </div>
+        <div style="display:flex;gap:8px;" id="perPageBtns">
+          <button class="perpage-btn" data-val="5" onclick="setPerPage(5)">5</button>
+          <button class="perpage-btn" data-val="10" onclick="setPerPage(10)">10</button>
+          <button class="perpage-btn active-perpage" data-val="20" onclick="setPerPage(20)">20</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- About -->
+    <div style="background:var(--surface-container-low);border-radius:16px;padding:24px;">
+      <div style="font-size:0.625rem;font-weight:800;letter-spacing:0.16em;text-transform:uppercase;color:var(--on-surface-variant);margin-bottom:16px;">About</div>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <div style="display:flex;justify-content:space-between;font-size:0.875rem;">
+          <span style="color:var(--on-surface-variant);">Version</span>
+          <span style="font-weight:700;color:var(--on-surface);">1.0.0</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:0.875rem;">
+          <span style="color:var(--on-surface-variant);">AIS data</span>
+          <span style="font-weight:700;color:var(--on-surface);">aisstream.io</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:0.875rem;">
+          <span style="color:var(--on-surface-variant);">Map tiles</span>
+          <span style="font-weight:700;color:var(--on-surface);">OpenStreetMap / CartoDB</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
 
 <!-- DETAIL PANEL -->
 <div class="detail-panel" id="detailPanel">
@@ -1240,6 +1514,9 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
   </div>
   <div class="detail-footer">
     <button class="detail-btn-primary" id="trackOnMapBtn">Track on Map</button>
+    <button class="detail-btn-secondary" id="markArrivedBtn" title="Mark as arrived — moves to Log">
+      <span class="material-symbols-outlined" style="font-size:18px;vertical-align:middle">check_circle</span>
+    </button>
     <button class="detail-btn-secondary" id="removeShipmentBtn" title="Remove shipment" style="color:var(--error);">
       <span class="material-symbols-outlined" style="font-size:18px;vertical-align:middle">delete_outline</span>
     </button>
@@ -1350,10 +1627,86 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
   </div>
 </div>
 
-<!-- FAB -->
-<button class="fab" id="fabBtn">
-  <span class="material-symbols-outlined">add</span>
-</button>
+<!-- HELP MODAL -->
+<div id="helpModal" style="display:none;position:fixed;inset:0;z-index:300;align-items:center;justify-content:center;background:rgba(0,23,54,0.45);backdrop-filter:blur(6px);">
+  <div style="background:var(--surface-container-lowest);border-radius:20px;width:520px;max-width:92vw;max-height:85vh;overflow-y:auto;box-shadow:0 32px 64px rgba(0,23,54,0.2);">
+    <div style="padding:28px 28px 0;display:flex;align-items:flex-start;justify-content:space-between;">
+      <div>
+        <div style="font-size:1.125rem;font-weight:900;color:var(--primary);margin-bottom:4px;">Getting Started</div>
+        <div style="font-size:0.8rem;color:var(--on-surface-variant);">Maritime Sentinel — Cargo Tracking Guide</div>
+      </div>
+      <button id="closeHelpBtn" style="background:none;border:none;cursor:pointer;padding:4px;color:var(--on-surface-variant);">
+        <span class="material-symbols-outlined">close</span>
+      </button>
+    </div>
+    <div style="padding:20px 28px 28px;display:flex;flex-direction:column;gap:20px;">
+
+      <div style="display:flex;gap:14px;align-items:flex-start;">
+        <div style="width:36px;height:36px;border-radius:10px;background:var(--primary-fixed);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <span class="material-symbols-outlined" style="font-size:18px;color:var(--primary);">satellite_alt</span>
+        </div>
+        <div>
+          <div style="font-size:0.875rem;font-weight:700;color:var(--primary);margin-bottom:4px;">1. Connect to live AIS</div>
+          <div style="font-size:0.8125rem;color:var(--on-surface-variant);line-height:1.6;">Click the connection badge in the top-right and paste your free API key from <strong>aisstream.io</strong>. This enables real-time vessel position updates. No credit card required.</div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:14px;align-items:flex-start;">
+        <div style="width:36px;height:36px;border-radius:10px;background:var(--primary-fixed);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <span class="material-symbols-outlined" style="font-size:18px;color:var(--primary);">add_circle</span>
+        </div>
+        <div>
+          <div style="font-size:0.875rem;font-weight:700;color:var(--primary);margin-bottom:4px;">2. Add your shipments</div>
+          <div style="font-size:0.8125rem;color:var(--on-surface-variant);line-height:1.6;">Click <strong>New Shipment</strong> in the sidebar or the + button. Enter your order/container reference, the vessel name and MMSI (look up at VesselFinder.com), and your loading and discharge ports with expected dates.</div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:14px;align-items:flex-start;">
+        <div style="width:36px;height:36px;border-radius:10px;background:var(--primary-fixed);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <span class="material-symbols-outlined" style="font-size:18px;color:var(--primary);">timeline</span>
+        </div>
+        <div>
+          <div style="font-size:0.875rem;font-weight:700;color:var(--primary);margin-bottom:4px;">3. Track port stops automatically</div>
+          <div style="font-size:0.8125rem;color:var(--on-surface-variant);line-height:1.6;">Each time the vessel declares a new destination via AIS, it appears in your shipment timeline. Port stops are logged 24/7 by the server — even when you're offline.</div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:14px;align-items:flex-start;">
+        <div style="width:36px;height:36px;border-radius:10px;background:var(--primary-fixed);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <span class="material-symbols-outlined" style="font-size:18px;color:var(--primary);">schedule</span>
+        </div>
+        <div>
+          <div style="font-size:0.875rem;font-weight:700;color:var(--primary);margin-bottom:4px;">4. Understand the ETA column</div>
+          <div style="font-size:0.8125rem;color:var(--on-surface-variant);line-height:1.6;">
+            The ETA shown is always for your final discharge port:<br>
+            <span style="display:inline-block;margin-top:6px;font-size:0.75rem;line-height:2;">
+              <span style="background:rgba(12,82,22,0.12);color:var(--on-tertiary-fixed-variant);padding:2px 6px;border-radius:4px;font-weight:800;font-size:0.5625rem;">AIS</span> &nbsp;Direct from vessel navigation — most accurate<br>
+              <span style="background:rgba(178,44,1,0.1);color:var(--secondary);padding:2px 6px;border-radius:4px;font-weight:800;font-size:0.5625rem;">+Xd SLIP</span> &nbsp;Booked date adjusted for accumulated delays<br>
+              <span style="background:rgba(0,23,54,0.08);color:var(--on-surface-variant);padding:2px 6px;border-radius:4px;font-weight:800;font-size:0.5625rem;">NEXT PORT</span> &nbsp;AIS ETA is to an intermediate stop, not your port
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:14px;align-items:flex-start;">
+        <div style="width:36px;height:36px;border-radius:10px;background:rgba(178,44,1,0.1);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <span class="material-symbols-outlined" style="font-size:18px;color:var(--secondary);">info</span>
+        </div>
+        <div>
+          <div style="font-size:0.875rem;font-weight:700;color:var(--primary);margin-bottom:4px;">AIS coverage gaps</div>
+          <div style="font-size:0.8125rem;color:var(--on-surface-variant);line-height:1.6;">Terrestrial AIS only covers ~200km from coastlines. Vessels mid-ocean won't update for days. The dashboard uses <strong>dead reckoning</strong> to estimate their current position — shown as a dimmed marker with an <span style="background:rgba(178,44,1,0.12);color:var(--secondary);padding:1px 5px;border-radius:3px;font-size:0.6875rem;font-weight:700;">EST</span> badge.</div>
+        </div>
+      </div>
+
+      <div style="margin-top:4px;padding:14px;background:var(--surface-container-low);border-radius:12px;font-size:0.75rem;color:var(--on-surface-variant);line-height:1.7;">
+        <strong style="color:var(--primary);">MMSI</strong> is the vessel's unique 9-digit identifier. Find it by searching the vessel name on <a href="https://www.vesselfinder.com" target="_blank" style="color:var(--primary);">VesselFinder.com</a> or <a href="https://www.marinetraffic.com" target="_blank" style="color:var(--primary);">MarineTraffic.com</a> and copying the number from the vessel details page.
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
 
 <script>
 // -- VESSEL REGISTRY ---------------------------------------------------------
@@ -2087,6 +2440,7 @@ let tableSearch   = '';
 let filterStatus  = '';
 let filterDest    = '';
 let sortBy        = '';
+let currentPage   = 1;
 
 function destMatchesFinal(s) {
   // Returns true if the vessel's current AIS destination is the user's discharge port
@@ -2138,8 +2492,14 @@ function renderTable() {
   const tbody = document.getElementById('shipmentTable');
   if (!tbody) return;
 
+  // Filter by fleet mode, and exclude completed shipments from dashboard
+  const activeShipments = shipments.filter(s =>
+    (s.mode || 'sea') === (typeof fleetMode !== 'undefined' ? fleetMode : 'sea') &&
+    !s.completedAt && s.status !== 'Arrived'
+  );
+
   // Filter
-  let rows = shipments.map((s, idx) => ({ s, idx })).filter(({ s }) => {
+  let rows = activeShipments.map((s, idx) => ({ s, idx: shipments.indexOf(s) })).filter(({ s }) => {
     if (tableSearch) {
       const q = tableSearch.toLowerCase();
       if (!s.id.toLowerCase().includes(q) &&
@@ -2155,6 +2515,14 @@ function renderTable() {
   if (sortBy === 'eta_desc')  rows.sort((a, b) => etaToMs(b.s) - etaToMs(a.s));
   if (sortBy === 'slip_desc') rows.sort((a, b) => (b.s.slipDays||0) - (a.s.slipDays||0));
   if (sortBy === 'id_asc')    rows.sort((a, b) => a.s.id.localeCompare(b.s.id));
+
+  // Pagination
+  const perPage   = typeof shipmentsPerPage !== 'undefined' ? shipmentsPerPage : 20;
+  const totalRows = rows.length;
+  const totalPages = Math.max(1, Math.ceil(totalRows / perPage));
+  if (currentPage > totalPages) currentPage = totalPages;
+  const pageStart = (currentPage - 1) * perPage;
+  rows = rows.slice(pageStart, pageStart + perPage);
 
   tbody.innerHTML = rows.map(({ s, idx }) => {
     const chipType = navStatusToChip(s.status);
@@ -2205,15 +2573,50 @@ function renderTable() {
   }
 
   // Update count
-  const info = document.querySelector('.page-info');
+  // Page info text
+  const info = document.getElementById('pageInfo');
   if (info) {
-    if (shipments.length === 0) {
-      info.textContent = 'No shipments';
-    } else if (rows.length < shipments.length) {
-      info.innerHTML = 'Showing <strong>' + rows.length + '</strong> of <strong>' + shipments.length + '</strong> shipments';
+    if (totalRows === 0) {
+      info.textContent = shipments.length === 0 ? 'No shipments' : 'No results';
     } else {
-      info.innerHTML = 'Showing <strong>' + shipments.length + '</strong> shipment' + (shipments.length !== 1 ? 's' : '');
+      const from = pageStart + 1;
+      const to   = Math.min(pageStart + rows.length, totalRows);
+      info.innerHTML = 'Showing <strong>' + from + '–' + to + '</strong> of <strong>' + totalRows + '</strong> shipment' + (totalRows !== 1 ? 's' : '');
     }
+  }
+
+  // Pagination buttons
+  const pageBtns = document.getElementById('pageBtns');
+  if (pageBtns) {
+    let btnsHtml = '';
+    // Prev
+    btnsHtml += '<button class="page-btn' + (currentPage <= 1 ? ' disabled' : '') + '" id="pgPrev">'
+      + '<span class="material-symbols-outlined">chevron_left</span></button>';
+    // Page numbers — show up to 5 around current page
+    const pageWindow = 2;
+    for (let p = 1; p <= totalPages; p++) {
+      if (p === 1 || p === totalPages || (p >= currentPage - pageWindow && p <= currentPage + pageWindow)) {
+        btnsHtml += '<button class="page-btn' + (p === currentPage ? ' active' : '') + '" data-page="' + p + '">' + p + '</button>';
+      } else if (p === currentPage - pageWindow - 1 || p === currentPage + pageWindow + 1) {
+        btnsHtml += '<button class="page-btn disabled" style="cursor:default;pointer-events:none;">…</button>';
+      }
+    }
+    // Next
+    btnsHtml += '<button class="page-btn' + (currentPage >= totalPages ? ' disabled' : '') + '" id="pgNext">'
+      + '<span class="material-symbols-outlined">chevron_right</span></button>';
+    pageBtns.innerHTML = btnsHtml;
+
+    // Wire clicks
+    pageBtns.querySelectorAll('[data-page]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        currentPage = parseInt(btn.dataset.page);
+        renderTable();
+      });
+    });
+    const prev = document.getElementById('pgPrev');
+    const next = document.getElementById('pgNext');
+    if (prev && currentPage > 1)        prev.addEventListener('click', () => { currentPage--; renderTable(); });
+    if (next && currentPage < totalPages) next.addEventListener('click', () => { currentPage++; renderTable(); });
   }
 
   // Update destination filter list dynamically
@@ -2818,6 +3221,212 @@ function noAlertsHtml(tracked) {
     '<div style="font-size:0.75rem;color:rgba(0,23,54,0.4);margin-top:4px;">' + tracked + ' shipment' + (tracked !== 1 ? 's' : '') + ' monitored</div></div></div>';
 }
 
+// -- VIEW SWITCHING -----------------------------------------------------------
+let currentView = 'dashboard'; // 'dashboard' | 'log'
+
+function switchView(view) {
+  currentView = view;
+  const main     = document.getElementById('mainCanvas');
+  const logScr   = document.getElementById('logScreen');
+  const setScr   = document.getElementById('settingsScreen');
+
+  document.getElementById('navDashboard').classList.toggle('active', view === 'dashboard');
+  document.getElementById('navLog').classList.toggle('active',       view === 'log');
+  document.getElementById('navSettings').classList.toggle('active',  view === 'settings');
+
+  main.style.display   = view === 'dashboard' ? ''      : 'none';
+  logScr.style.display = view === 'log'        ? 'flex'  : 'none';
+  setScr.style.display = view === 'settings'   ? 'flex'  : 'none';
+
+  if (view === 'log')      renderLog();
+  if (view === 'settings') syncSettingsUI();
+}
+
+function syncSettingsUI() {
+  // Sync theme buttons
+  const lightBtn = document.getElementById('themeLightBtn');
+  const darkBtn  = document.getElementById('themeDarkBtn');
+  if (lightBtn && darkBtn) {
+    lightBtn.classList.toggle('active-theme', currentTheme === 'light');
+    darkBtn.classList.toggle('active-theme',  currentTheme === 'dark');
+  }
+  // Sync per-page buttons
+  document.querySelectorAll('.perpage-btn').forEach(btn => {
+    btn.classList.toggle('active-perpage', parseInt(btn.dataset.val) === shipmentsPerPage);
+  });
+}
+
+// -- LOG SCREEN ---------------------------------------------------------------
+// A shipment is "completed" when s.status === 'Arrived' or s.completedAt is set.
+// Users mark shipments as arrived from the detail panel.
+
+function getLogShipments() {
+  return shipments.filter(s => s.status === 'Arrived' || s.completedAt);
+}
+
+function renderLog() {
+  const completed = getLogShipments();
+  const empty  = document.getElementById('logEmpty');
+  const list   = document.getElementById('logList');
+
+  // Stats
+  const totalDelay = completed.reduce((sum, s) => sum + (s.slipDays || 0), 0);
+  const delayed    = completed.filter(s => (s.slipDays || 0) > 0);
+  const onTimePct  = completed.length
+    ? Math.round(((completed.length - delayed.length) / completed.length) * 100) : null;
+
+  // Most delayed port — aggregate slip by port name across all completed
+  const portDelays = {};
+  completed.forEach(s => {
+    (s.timeline || []).forEach(t => {
+      if (t.aisEta && t.slipAtStop) {
+        portDelays[t.event] = (portDelays[t.event] || 0) + t.slipAtStop;
+      }
+    });
+  });
+  const worstPort = Object.entries(portDelays).sort((a,b) => b[1]-a[1])[0];
+
+  document.getElementById('logStatCompleted').textContent = completed.length;
+  document.getElementById('logStatAvgDelay').textContent  =
+    completed.length && totalDelay !== 0
+      ? (totalDelay / completed.length).toFixed(1) + 'd'
+      : '0d';
+  document.getElementById('logStatOnTime').textContent    =
+    onTimePct !== null ? onTimePct + '%' : '—';
+  document.getElementById('logStatWorstPort').textContent =
+    worstPort ? worstPort[0].replace('Transit via ', '') : '—';
+
+  if (completed.length === 0) {
+    empty.style.display = 'block';
+    list.innerHTML = '';
+    return;
+  }
+  empty.style.display = 'none';
+
+  // Sort most recently completed first
+  const sorted = [...completed].sort((a, b) =>
+    new Date(b.completedAt || 0) - new Date(a.completedAt || 0)
+  );
+
+  list.innerHTML = '<div class="log-table-header">'
+    + '<div class="log-col-id">Order / ID</div>'
+    + '<div class="log-col-route">Route</div>'
+    + '<div class="log-col-slip" style="text-align:center;">Result</div>'
+    + '<div class="log-col-date" style="text-align:right;">Completed</div>'
+    + '<div class="log-col-chevron"></div>'
+    + '</div>'
+    + sorted.map((s, i) => logRowHtml(s, i)).join('');
+}
+
+function logRowHtml(s, rowIdx) {
+  const slip = s.slipDays || 0;
+  const slipColor = slip > 0 ? 'var(--error)' : slip < 0 ? 'var(--on-tertiary-fixed-variant)' : 'var(--on-surface-variant)';
+  const slipText  = slip === 0 ? 'On time'
+    : slip > 0  ? '<span style="color:var(--error);font-weight:800;">+' + slip + 'd</span>'
+    : '<span style="color:var(--on-tertiary-fixed-variant);font-weight:800;">' + Math.abs(slip) + 'd early</span>';
+  const completedStr = s.completedAt
+    ? new Date(s.completedAt).toLocaleDateString('en-GB', {day:'2-digit',month:'short',year:'numeric'})
+    : '—';
+  const drawerId = 'log-drawer-' + rowIdx;
+
+  return '<div class="log-row" data-drawer="' + drawerId + '" onclick="toggleLogDrawer(this.dataset.drawer, this)">'
+    + '<div class="log-row-main">'
+    + '<div class="log-col-id">'
+    + '<div style="font-weight:800;color:var(--primary);font-size:0.875rem;">' + s.id + '</div>'
+    + '<div style="font-size:0.75rem;color:var(--on-surface-variant);margin-top:2px;">' + s.vessel + '</div>'
+    + '</div>'
+    + '<div class="log-col-route" style="font-size:0.8125rem;color:var(--on-surface-variant);">'
+    + s.origin + ' → ' + s.dest
+    + '</div>'
+    + '<div class="log-col-slip" style="font-size:0.875rem;text-align:center;">' + slipText + '</div>'
+    + '<div class="log-col-date" style="font-size:0.8125rem;color:var(--on-surface-variant);text-align:right;">'
+    + completedStr
+    + '</div>'
+    + '<div class="log-col-chevron">'
+    + '<span class="material-symbols-outlined log-chevron" style="font-size:18px;color:var(--outline);transition:transform 0.2s;">expand_more</span>'
+    + '</div>'
+    + '</div>'
+
+    // Expandable drawer
+    + '<div id="' + drawerId + '" class="log-drawer">'
+    + '<div class="log-drawer-inner">'
+
+    // Port history
+    + '<div class="log-drawer-section">'
+    + '<div class="log-drawer-label">Port history</div>'
+    + ((s.timeline || []).filter(t => t.state === 'done' || t.aisEta).length > 0
+        ? (s.timeline || []).filter(t => t.state === 'done' || t.aisEta).map(t => {
+            const dotColor = t.state === 'done' ? 'var(--primary)' : 'var(--outline-variant)';
+            const slipNote = t.slipAtStop ? ' <span style="color:var(--error);font-size:0.6875rem;font-weight:700;">(+' + t.slipAtStop + 'd)</span>' : '';
+            return '<div style="display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid var(--surface-container-high);">'
+              + '<div style="width:6px;height:6px;border-radius:50%;background:' + dotColor + ';flex-shrink:0;"></div>'
+              + '<div style="flex:1;font-size:0.8125rem;font-weight:600;color:var(--on-surface);">' + t.event + slipNote + '</div>'
+              + '<div style="font-size:0.75rem;color:var(--on-surface-variant);white-space:nowrap;">' + (t.time || '') + '</div>'
+              + '</div>';
+          }).join('')
+        : '<div style="font-size:0.8125rem;color:var(--on-surface-variant);">No port stops recorded</div>')
+    + '</div>'
+
+    // Cargo details
+    + '<div class="log-drawer-section">'
+    + '<div class="log-drawer-label">Cargo details</div>'
+    + '<div style="display:flex;gap:24px;flex-wrap:wrap;">'
+    + '<div><div style="font-size:0.625rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:var(--outline);">Description</div>'
+    + '<div style="font-size:0.8125rem;color:var(--on-surface);margin-top:3px;">' + (s.cargo || '—') + '</div></div>'
+    + '<div><div style="font-size:0.625rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:var(--outline);">Weight</div>'
+    + '<div style="font-size:0.8125rem;color:var(--on-surface);margin-top:3px;">' + (s.weight || '—') + '</div></div>'
+    + '<div><div style="font-size:0.625rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:var(--outline);">Booked arrival</div>'
+    + '<div style="font-size:0.8125rem;color:var(--on-surface);margin-top:3px;">' + (s.arriveDate || '—') + '</div></div>'
+    + '</div>'
+    + '</div>'
+
+    + '</div></div>'
+    + '</div>';
+}
+
+function toggleLogDrawer(id, row) {
+  const drawer  = document.getElementById(id);
+  const chevron = row.querySelector('.log-chevron');
+  const isOpen  = drawer.classList.contains('open');
+  // Close all other drawers first
+  document.querySelectorAll('.log-drawer.open').forEach(d => {
+    d.classList.remove('open');
+    const ch = d.closest('.log-row').querySelector('.log-chevron');
+    if (ch) ch.style.transform = 'rotate(0deg)';
+  });
+  if (!isOpen) {
+    drawer.classList.add('open');
+    if (chevron) chevron.style.transform = 'rotate(180deg)';
+  }
+}
+
+// -- SETTINGS ----------------------------------------------------------------
+let shipmentsPerPage = parseInt(localStorage.getItem('ms_per_page') || '20');
+let currentTheme     = localStorage.getItem('ms_theme') || 'light';
+
+function setTheme(theme) {
+  currentTheme = theme;
+  localStorage.setItem('ms_theme', theme);
+  document.body.classList.toggle('dark-mode', theme === 'dark');
+  // Update button states
+  const lightBtn = document.getElementById('themeLightBtn');
+  const darkBtn  = document.getElementById('themeDarkBtn');
+  if (lightBtn && darkBtn) {
+    lightBtn.classList.toggle('active-theme', theme === 'light');
+    darkBtn.classList.toggle('active-theme',  theme === 'dark');
+  }
+}
+
+function setPerPage(n) {
+  shipmentsPerPage = n;
+  localStorage.setItem('ms_per_page', n);
+  // Update button states
+  document.querySelectorAll('.perpage-btn').forEach(btn => {
+    btn.classList.toggle('active-perpage', parseInt(btn.dataset.val) === n);
+  });
+  renderTable();
+}
+
 // -- BOOT ----------------------------------------------------------------------
 window.addEventListener('load', () => {
   // Wire up modal buttons
@@ -2837,6 +3446,12 @@ window.addEventListener('load', () => {
       }
     }
   } catch(e) {}
+
+  // Apply saved settings
+  setTheme(currentTheme);
+  document.querySelectorAll('.perpage-btn').forEach(btn => {
+    btn.classList.toggle('active-perpage', parseInt(btn.dataset.val) === shipmentsPerPage);
+  });
 
   // Render table from JS data
   renderTable();
@@ -2859,6 +3474,7 @@ window.addEventListener('load', () => {
   const searchClear = document.getElementById('searchClear');
   searchInput.addEventListener('input', () => {
     tableSearch = searchInput.value.trim();
+    currentPage = 1;
     searchClear.style.display = tableSearch ? 'flex' : 'none';
     renderTable();
   });
@@ -2889,6 +3505,7 @@ window.addEventListener('load', () => {
   document.querySelectorAll('input[name="filterStatus"]').forEach(el => {
     el.addEventListener('change', () => {
       filterStatus = el.value;
+      currentPage = 1;
       updateFilterLabel();
       renderTable();
     });
@@ -2924,6 +3541,7 @@ window.addEventListener('load', () => {
   document.querySelectorAll('input[name="sortBy"]').forEach(el => {
     el.addEventListener('change', () => {
       sortBy = el.value;
+      currentPage = 1;
       updateSortLabel();
       renderTable();
     });
@@ -2947,7 +3565,6 @@ window.addEventListener('load', () => {
   document.getElementById('sortMenu').addEventListener('click', e => e.stopPropagation());
 
   // Add shipment modal
-  document.getElementById('fabBtn').addEventListener('click', openAddModal);
   document.getElementById('closeAddModal').addEventListener('click', closeAddModal);
   document.getElementById('cancelAddModal').addEventListener('click', closeAddModal);
   document.getElementById('submitAddShipment').addEventListener('click', submitAddShipment);
@@ -2965,7 +3582,7 @@ window.addEventListener('load', () => {
     if (e.target === this) closeAddModal();
   });
 
-  // Also wire the sidebar New Shipment button
+  // Wire the sidebar New Shipment button
   document.querySelector('.new-shipment-btn').addEventListener('click', openAddModal);
 
   document.getElementById('openMapBtn').addEventListener('click', expandMap);
@@ -2973,6 +3590,24 @@ window.addEventListener('load', () => {
   // Remove shipment - from detail panel
   document.getElementById('removeShipmentBtn').addEventListener('click', () => {
     if (activeId !== null) promptRemoveShipment(activeId);
+  });
+
+  // Mark as Arrived — moves shipment to log
+  document.getElementById('markArrivedBtn').addEventListener('click', () => {
+    if (activeId === null) return;
+    const s = shipments[activeId];
+    s.status      = 'Arrived';
+    s.completedAt = new Date().toISOString();
+    // Mark last timeline event as done
+    if (s.timeline && s.timeline.length > 0) {
+      s.timeline[s.timeline.length - 1].state = 'done';
+      s.timeline[s.timeline.length - 1].time  =
+        new Date().toLocaleDateString('en-GB', {day:'2-digit',month:'short',year:'numeric'});
+    }
+    saveShipments();
+    renderTable();
+    renderAlerts();
+    closeDetail();
   });
 
   // Track on map button
@@ -3015,7 +3650,66 @@ window.addEventListener('load', () => {
     }
   });
   document.getElementById('collapseMapBtn').addEventListener('click', collapseMap);
+
+  // ── HELP MODAL ────────────────────────────────────────────────────────────
+  document.getElementById('helpBtn').addEventListener('click', () => {
+    document.getElementById('helpModal').style.display = 'flex';
+  });
+  document.getElementById('closeHelpBtn').addEventListener('click', () => {
+    document.getElementById('helpModal').style.display = 'none';
+  });
+  document.getElementById('helpModal').addEventListener('click', function(e) {
+    if (e.target === this) this.style.display = 'none';
+  });
+
+  // ── FLEET MODE SELECTOR ───────────────────────────────────────────────────
+  let fleetMode = 'sea'; // 'sea' | 'air'
+
+  document.getElementById('fleetSelectorBtn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    // Close filter/sort menus
+    document.getElementById('filterMenu').style.display = 'none';
+    document.getElementById('sortMenu').style.display = 'none';
+    const menu = document.getElementById('fleetMenu');
+    menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+  });
+  document.getElementById('fleetMenu').addEventListener('click', e => e.stopPropagation());
+
+  document.getElementById('fleetOptSea').addEventListener('click', () => {
+    fleetMode = 'sea';
+    document.getElementById('fleetLabel').textContent = 'Sea Freight';
+    document.getElementById('fleetIcon').textContent = 'directions_boat';
+    document.getElementById('fleetOptSea').style.fontWeight = '700';
+    document.getElementById('fleetOptSea').style.color = 'var(--primary)';
+    document.getElementById('fleetOptAir').style.fontWeight = '400';
+    document.getElementById('fleetOptAir').style.color = 'var(--on-surface-variant)';
+    document.getElementById('fleetMenu').style.display = 'none';
+    renderTable(); // sea shipments
+  });
+
+  document.getElementById('fleetOptAir').addEventListener('click', () => {
+    fleetMode = 'air';
+    document.getElementById('fleetLabel').textContent = 'Air Freight';
+    document.getElementById('fleetIcon').textContent = 'flight';
+    document.getElementById('fleetOptAir').style.fontWeight = '700';
+    document.getElementById('fleetOptAir').style.color = 'var(--primary)';
+    document.getElementById('fleetOptSea').style.fontWeight = '400';
+    document.getElementById('fleetOptSea').style.color = 'var(--on-surface-variant)';
+    document.getElementById('fleetMenu').style.display = 'none';
+    renderTable(); // will show 0 shipments until air is built
+  });
   document.getElementById('connBadgeBtn').addEventListener('click', openApiModal);
+
+  // ── NAV SWITCHING ─────────────────────────────────────────────────────────
+  document.getElementById('navDashboard').addEventListener('click', (e) => {
+    e.preventDefault(); switchView('dashboard');
+  });
+  document.getElementById('navLog').addEventListener('click', (e) => {
+    e.preventDefault(); switchView('log');
+  });
+  document.getElementById('navSettings').addEventListener('click', (e) => {
+    e.preventDefault(); switchView('settings');
+  });
   document.getElementById('submitKeyBtn').addEventListener('click', submitApiKey);
   document.getElementById('cancelKeyBtn').addEventListener('click', closeApiModal);
   document.getElementById('clearKeyLink').addEventListener('click', () => {
