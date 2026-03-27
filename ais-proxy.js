@@ -39,9 +39,7 @@ let connectedCount = 0;
 const lastDest     = {};
 
 // Track last time each MMSI sent a message via aisstream
-const lastAisMessage = {}; // { mmsi: timestamp }
-const FALLBACK_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes with no aisstream signal
-const FALLBACK_INTERVAL_MS  = 5 * 60 * 1000; // poll VesselFinder every 5 minutes
+const lastAisMessage = {};
 
 // ── EVENT LOG ─────────────────────────────────────────────────────────────────
 function loadEvents() {
@@ -315,99 +313,6 @@ wss.on('connection', browserSocket => {
   browserSocket.on('error', err => console.error('[ws] Error:', err.message));
 });
 
-// ── VESSELFINDER FALLBACK POLLER ──────────────────────────────────────────────
-const https = require('https');
-
-// Browser-pushed fallback
-// The dashboard fetches VesselFinder directly (no IP block, runs in user's browser)
-// and sends position data to the proxy via a special WebSocket message type.
-// The proxy then forwards it to all other connected browsers as a normal AIS message.
-// This function is a no-op — position data arrives via handleBrowserFallback() below.
-async function fetchVesselPosition(mmsi) {
-  return null; // position comes from browser push, not server fetch
-}
-
-// Called when browser sends a fallback position update
-function handleBrowserFallback(payload) {
-  const { mmsi, lat, lng, sog, cog, dest, navStatus, name } = payload;
-  if (!mmsi || !lat || !lng) return;
-
-  console.log(`[fallback] browser-pushed ${mmsi}: ${lat.toFixed(3)},${lng.toFixed(3)} sog:${sog}`);
-
-  // Update last-seen so poller doesn't immediately re-request
-  lastAisMessage[mmsi] = Date.now();
-
-  // Build synthetic PositionReport and forward to all browsers
-  const posMsg = JSON.stringify({
-    MessageType: 'PositionReport',
-    _source: 'browser-fallback',
-    MetaData: { MMSI: parseInt(mmsi), MMSI_String: String(mmsi),
-                ShipName: name, latitude: lat, longitude: lng },
-    Message: { PositionReport: {
-      Latitude: lat, Longitude: lng, Cog: cog,
-      Sog: sog, NavigationalStatus: navStatus || 0,
-    }},
-  });
-  const staticMsg = dest ? JSON.stringify({
-    MessageType: 'ShipStaticData',
-    _source: 'browser-fallback',
-    MetaData: { MMSI: parseInt(mmsi), MMSI_String: String(mmsi),
-                ShipName: name, latitude: lat, longitude: lng },
-    Message: { ShipStaticData: { Destination: dest, Name: name } },
-  }) : null;
-
-  wss.clients.forEach(c => {
-    if (c.readyState === 1) {
-      c.send(posMsg);
-      if (staticMsg) c.send(staticMsg);
-    }
-  });
-}
-
-async function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-async function runFallbackPoller() {
-  if (trackedMmsis.length === 0) return;
-  const now = Date.now();
-  for (const mmsi of trackedMmsis) {
-    const silent = now - (lastAisMessage[mmsi] || 0);
-    if (silent < FALLBACK_THRESHOLD_MS) continue;
-    console.log(`[fallback] ${mmsi} silent ${Math.round(silent/60000)}m — polling VesselFinder`);
-    const d = await fetchVesselPosition(mmsi);
-    await sleep(2000); // 2s delay between requests to avoid rate limiting
-    if (!d || !d.lat) { console.log(`[fallback] ${mmsi} — no data`); continue; }
-    console.log(`[fallback] ${mmsi} — ${d.lat.toFixed(3)},${d.lng.toFixed(3)} sog:${d.sog}`);
-    // Send PositionReport with location data
-    const posMsg = JSON.stringify({
-      MessageType: 'PositionReport',
-      _source: 'vesselfinder-fallback',
-      MetaData: { MMSI: parseInt(mmsi), MMSI_String: mmsi,
-                  ShipName: d.name, latitude: d.lat, longitude: d.lng },
-      Message: { PositionReport: {
-        Latitude: d.lat, Longitude: d.lng, Cog: d.cog,
-        Sog: d.sog, NavigationalStatus: d.navStatus,
-      }},
-    });
-    // Also send ShipStaticData if we have destination
-    const staticMsg = d.dest ? JSON.stringify({
-      MessageType: 'ShipStaticData',
-      _source: 'vesselfinder-fallback',
-      MetaData: { MMSI: parseInt(mmsi), MMSI_String: mmsi,
-                  ShipName: d.name, latitude: d.lat, longitude: d.lng },
-      Message: { ShipStaticData: { Destination: d.dest, Name: d.name } },
-    }) : null;
-    let sent = 0;
-    wss.clients.forEach(c => {
-      if (c.readyState === 1) {
-        c.send(posMsg);
-        if (staticMsg) c.send(staticMsg);
-        sent++;
-      }
-    });
-    lastAisMessage[mmsi] = Date.now();
-    console.log(`[fallback] ${mmsi} — forwarded to ${sent} browser(s)`);
-  }
-}
 
 // ── START ─────────────────────────────────────────────────────────────────────
 loadConfig();
@@ -417,13 +322,8 @@ httpServer.listen(PROXY_PORT, () => {
   console.log(`    GET  /events    -> voyage event log`);
   console.log(`    GET  /health    -> status`);
   console.log(`    POST /subscribe -> update vessels`);
-  console.log(`    VesselFinder fallback: every ${FALLBACK_INTERVAL_MS/60000}min for silent vessels`);
   console.log('');
   if (apiKey && trackedMmsis.length > 0) connectToAIS();
   else console.log('    Waiting for first browser connection...\n');
 
-  // Start the fallback poller
-  setInterval(runFallbackPoller, FALLBACK_INTERVAL_MS);
-  // Also run once after 30s startup delay so newly added vessels get data fast
-  setTimeout(runFallbackPoller, 30000);
 });

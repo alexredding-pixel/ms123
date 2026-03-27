@@ -1657,8 +1657,22 @@ function refreshDetailPanel(idx) {
     if (s.speed) liveSection.innerHTML += detailRow('Speed', s.speed);
     if (s.course) liveSection.innerHTML += detailRow('Course', s.course);
     if (s.destination) liveSection.innerHTML += detailRow('AIS Destination', s.destination);
-    if (s.lat && s.lng) liveSection.innerHTML += detailRow('Position', `${s.lat.toFixed(4)} deg, ${s.lng.toFixed(4)} deg`);
+
     if (s.lastUpdate) liveSection.innerHTML += detailRow('Last Update', s.lastUpdate);
+    // Dead reckoning estimate
+    if (s.drLat) {
+      liveSection.innerHTML += detailRow(
+        'Position',
+        s.drLat.toFixed(4) + '°, ' + s.drLng.toFixed(4) + '° '
+        + '<span style="font-size:0.6875rem;font-weight:700;background:rgba(178,44,1,0.12);color:var(--secondary);padding:2px 7px;border-radius:4px;margin-left:4px;">EST</span>'
+      );
+      liveSection.innerHTML += detailRow(
+        'Out of AIS range',
+        s.drAgeMins + ' min ago · ~' + s.drDistNm + ' nm since last fix'
+      );
+    } else if (s.lat && s.lng) {
+      liveSection.innerHTML += detailRow('Position', s.lat.toFixed(4) + '°, ' + s.lng.toFixed(4) + '°');
+    }
     // Slip info
     if (s.slipDays && s.slipDays !== 0) {
       const sign = s.slipDays > 0 ? '+' : '';
@@ -1703,9 +1717,8 @@ function detailRow(label, value) {
 }
 
 // Map dot position update - maps lat/lng to SVG viewport coords
-function updateMapDot(idx, lat, lng) {
-  // Now handled by Leaflet - delegate to addOrMoveMarker
-  addOrMoveMarker(idx);
+function updateMapDot(idx, lat, lng, estimated) {
+  addOrMoveMarker(idx, estimated);
 }
 
 // -- CONNECTION STATUS UI ------------------------------------------------------
@@ -1770,7 +1783,7 @@ function openDetail(idx) {
     if (s.speed) liveSection.innerHTML += detailRow('Speed', s.speed);
     if (s.course) liveSection.innerHTML += detailRow('Course', s.course);
     if (s.destination) liveSection.innerHTML += detailRow('AIS Destination', s.destination);
-    if (s.lat && s.lng) liveSection.innerHTML += detailRow('Position', `${s.lat.toFixed(4)} deg, ${s.lng.toFixed(4)} deg`);
+
     if (s.lastUpdate) liveSection.innerHTML += detailRow('Last AIS Update', s.lastUpdate);
   }
 
@@ -1877,20 +1890,31 @@ function initLeafletMap() {
 
 function addOrMoveMarker(idx) {
   const s = shipments[idx];
-  if (s.lat == null || s.lng == null) return;
+  // Use dead reckoning position if vessel is out of AIS range
+  const lat = s.drLat ?? s.lat;
+  const lng = s.drLng ?? s.lng;
+  const isEstimated = s.drLat != null;
+  if (lat == null || lng == null) return;
   if (!leafletMap) { initLeafletMap(); }
   if (vesselMarkers[idx]) {
-    vesselMarkers[idx].setLatLng([s.lat, s.lng]);
+    vesselMarkers[idx].setLatLng([lat, lng]);
     vesselMarkers[idx].setIcon(vesselMarkerIcon(idx, s.status));
+    // Dim marker when position is estimated
+    const el = vesselMarkers[idx].getElement();
+    if (el) el.style.opacity = isEstimated ? '0.45' : '1';
     if (vesselMarkers[idx].isPopupOpen()) {
       vesselMarkers[idx].getPopup().setContent(vesselPopupHtml(s));
     }
   } else {
-    const marker = L.marker([s.lat, s.lng], { icon: vesselMarkerIcon(idx, s.status) })
+    const marker = L.marker([lat, lng], { icon: vesselMarkerIcon(idx, s.status) })
       .addTo(leafletMap)
       .bindPopup(vesselPopupHtml(s), { maxWidth: 260, minWidth: 220 });
     marker.on('click', () => openDetail(idx));
     vesselMarkers[idx] = marker;
+    if (isEstimated) {
+      const el = marker.getElement();
+      if (el) el.style.opacity = '0.45';
+    }
   }
   updateFleetStats();
 }
@@ -2060,54 +2084,68 @@ function submitAddShipment() {
   setTimeout(() => openDetail(shipments.length - 1), 100);
 }
 
-// -- BROWSER-SIDE FALLBACK POLLER --------------------------------------------
-// The browser fetches VesselFinder directly (no IP block) for vessels that
-// haven't sent an aisstream update recently, then pushes the position to the
-// proxy which forwards it to all connected browsers as a synthetic AIS message.
 
-const BROWSER_FALLBACK_INTERVAL = 5 * 60 * 1000; // every 5 minutes
-const BROWSER_FALLBACK_SILENT   = 5 * 60 * 1000; // poll if silent for 5min
 
-async function browserFallbackPoller() {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  const now = Date.now();
+// -- DEAD RECKONING ----------------------------------------------------------
+// When a vessel is out of terrestrial AIS range, project its position forward
+// from the last known fix using speed and course. Updated every minute.
+// Results are tagged as estimated so the UI can show them differently.
 
-  for (const s of shipments) {
-    if (!s.mmsi) continue;
-    const silent = now - (s.lastUpdateTs || 0);
-    if (silent < BROWSER_FALLBACK_SILENT) continue;
+const DR_UPDATE_INTERVAL = 60 * 1000;      // update estimate every 60s
+const DR_THRESHOLD_MS    = 10 * 60 * 1000; // start DR after 10min silence
 
-    try {
-      // VesselFinder blocks CORS from all browser origins.
-      // Route through corsproxy.io which fetches server-side and adds CORS headers.
-      const target = encodeURIComponent('https://www.vesselfinder.com/api/pub/click/' + s.mmsi);
-      const res = await fetch('https://corsproxy.io/?' + target);
-      if (!res.ok) continue;
-      const j = await res.json();
+function deadReckon(s) {
+  if (!s.lat || !s.lng || !s.lastUpdateTs) return null;
+  const elapsed = Date.now() - s.lastUpdateTs;
+  if (elapsed < DR_THRESHOLD_MS) return null; // still fresh enough
 
-      const lat = parseFloat(j.y ?? j.lat) || null;
-      const lng = parseFloat(j.x ?? j.lng) || null;
-      if (!lat || !lng) {
-        console.log('[browser-fallback] no coords for ' + s.mmsi + ' keys:' + Object.keys(j).join(','));
-        continue;
-      }
+  // Parse speed from "14.2 kn" → 14.2
+  const sog = parseFloat(s.speed) || 0;
+  if (sog < 0.3) return null; // anchored/moored — don't project
 
-      console.log('[browser-fallback] ' + s.mmsi + ' (' + s.vessel + '): ' + lat.toFixed(3) + ',' + lng.toFixed(3) + ' sog:' + (j.ss ?? j.sog));
+  // Parse course from "281 deg" → 281
+  const cog = parseFloat(s.course) || 0;
 
-      ws.send(JSON.stringify({
-        _type: 'fallback_position',
-        mmsi:   s.mmsi,
-        name:  (j.name || s.vessel).trim(),
-        lat, lng,
-        sog:       parseFloat(j.ss ?? j.sog) || null,
-        cog:       parseFloat(j.cu ?? j.cog) || null,
-        dest:      (j.dest ?? j.destination ?? '').trim(),
-        navStatus: parseInt(j['.ns'] ?? 0) || 0,
-      }));
-    } catch(e) {
-      console.log('[browser-fallback] error for ' + s.mmsi + ': ' + e.message);
+  // Hours elapsed since last fix
+  const hours = elapsed / 3600000;
+
+  // Distance travelled in nautical miles
+  const dist = sog * hours;
+
+  // Convert course to radians
+  const cogRad = (cog * Math.PI) / 180;
+
+  // 1 nautical mile ≈ 1/60 degree latitude
+  const dLat = (dist * Math.cos(cogRad)) / 60;
+  // Longitude degrees per nm varies with latitude
+  const dLng = (dist * Math.sin(cogRad)) / (60 * Math.cos(s.lat * Math.PI / 180));
+
+  return {
+    lat:     s.lat + dLat,
+    lng:     s.lng + dLng,
+    ageMins: Math.round(elapsed / 60000),
+    distNm:  Math.round(dist),
+  };
+}
+
+function applyDeadReckoning() {
+  let changed = false;
+  shipments.forEach((s, idx) => {
+    const dr = deadReckon(s);
+    if (!dr) {
+      if (s.drLat) { delete s.drLat; delete s.drLng; changed = true; }
+      return;
     }
-  }
+    s.drLat    = dr.lat;
+    s.drLng    = dr.lng;
+    s.drAgeMins = dr.ageMins;
+    s.drDistNm  = dr.distNm;
+    changed = true;
+
+    // Move the map marker to the estimated position (dimmed)
+    updateMapDot(idx, dr.lat, dr.lng, true); // true = estimated
+  });
+  if (changed && activeId !== null) refreshDetailPanel(activeId);
 }
 
 // -- PROXY SYNC --------------------------------------------------------------
@@ -2533,9 +2571,10 @@ window.addEventListener('load', () => {
   // Fetch voyage event history from proxy on load
   fetchVoyageEvents();
 
-  // Start browser-side fallback poller for vessels not in aisstream coverage
-  setInterval(browserFallbackPoller, BROWSER_FALLBACK_INTERVAL);
-  setTimeout(browserFallbackPoller, 10000); // first run 10s after load
+  // Dead reckoning — update estimated positions every minute
+  setInterval(applyDeadReckoning, DR_UPDATE_INTERVAL);
+  setTimeout(applyDeadReckoning, 5000); // first pass after 5s
+
 
   // Add shipment modal
   document.getElementById('fabBtn').addEventListener('click', openAddModal);
