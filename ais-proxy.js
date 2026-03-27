@@ -261,70 +261,90 @@ wss.on('connection', browserSocket => {
 // ── VESSELFINDER FALLBACK POLLER ──────────────────────────────────────────────
 const https = require('https');
 
-function fetchVesselFinder(mmsi) {
+// Try multiple public vessel data sources in order
+async function fetchVesselPosition(mmsi) {
+  // Source 1: myshiptracking.com public vessel info
+  const result = await tryMyShipTracking(mmsi);
+  if (result) return result;
+  // Source 2: MarineTraffic public vessel page (scrape lat/lng from HTML)
+  return await tryMarineTraffic(mmsi);
+}
+
+function httpGet(options) {
   return new Promise((resolve) => {
-    // Try the public VesselFinder vessel page as fallback source
-    const options = {
-      hostname: 'www.vesselfinder.com',
-      path: `/api/pub/click/${mmsi}`,
-      method: 'GET',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json, text/javascript, */*; q=0.01',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Referer': 'https://www.vesselfinder.com/',
-        'X-Requested-With': 'XMLHttpRequest',
-      },
-      timeout: 10000,
-    };
     const req = https.request(options, (res) => {
-      console.log(`[fallback] HTTP ${res.statusCode} for ${mmsi}`);
-      // Follow redirects
-      if (res.statusCode === 301 || res.statusCode === 302) {
-        console.log(`[fallback] redirect to: ${res.headers.location}`);
-        resolve(null); return;
-      }
-      if (res.statusCode !== 200) {
-        res.resume(); // drain
-        resolve(null); return;
-      }
+      if (res.statusCode !== 200) { res.resume(); resolve(null); return; }
       let data = '';
       res.on('data', c => data += c);
-      res.on('end', () => {
-        console.log(`[fallback] raw(${mmsi}): ${data.slice(0, 300)}`);
-        try {
-          const j = JSON.parse(data);
-          // Try multiple possible coordinate field names
-          const lat = parseFloat(j.y ?? j.lat ?? j.latitude ?? j.la) || null;
-          const lng = parseFloat(j.x ?? j.lng ?? j.longitude ?? j.lo) || null;
-          const sog = parseFloat(j.ss ?? j.sog ?? j.speed) || null;
-          const cog = parseFloat(j.cu ?? j.cog ?? j.course) || null;
-          const name = (j.name ?? j.NAME ?? '').trim();
-          const dest = (j.dest ?? j.destination ?? j.DEST ?? '').trim();
-          const navStatus = parseInt(j['.ns'] ?? j.ns ?? j.navStatus ?? 0) || 0;
-          if (lat && lng) {
-            resolve({ name, lat, lng, cog, sog, dest, navStatus });
-          } else {
-            console.log(`[fallback] no coords for ${mmsi}, keys: ${Object.keys(j).join(',')}`);
-            resolve(null);
-          }
-        } catch(e) {
-          console.log(`[fallback] parse error for ${mmsi}: ${e.message} body: ${data.slice(0,100)}`);
-          resolve(null);
-        }
-      });
+      res.on('end', () => resolve(data));
     });
-    req.on('error', (e) => {
-      console.log(`[fallback] request error for ${mmsi}: ${e.message}`);
-      resolve(null);
-    });
-    req.on('timeout', () => {
-      console.log(`[fallback] timeout for ${mmsi}`);
-      req.destroy();
-      resolve(null);
-    });
+    req.on('error', () => resolve(null));
+    req.on('timeout', () => { req.destroy(); resolve(null); });
     req.end();
   });
+}
+
+async function tryMyShipTracking(mmsi) {
+  try {
+    const data = await httpGet({
+      hostname: 'www.myshiptracking.com',
+      path: `/vessels?mmsi=${mmsi}&type=json`,
+      method: 'GET',
+      timeout: 8000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+        'Accept': 'application/json',
+        'Referer': 'https://www.myshiptracking.com/',
+      },
+    });
+    if (!data) return null;
+    console.log(`[fallback] myshiptracking raw(${mmsi}): ${data.slice(0,200)}`);
+    const j = JSON.parse(data);
+    const v = Array.isArray(j) ? j[0] : j;
+    const lat = parseFloat(v.lat ?? v.latitude ?? v.LAT) || null;
+    const lng = parseFloat(v.lng ?? v.lon ?? v.longitude ?? v.LON) || null;
+    if (!lat || !lng) return null;
+    return {
+      name: (v.name ?? v.SHIPNAME ?? '').trim(),
+      lat, lng,
+      sog: parseFloat(v.speed ?? v.SOG) || null,
+      cog: parseFloat(v.course ?? v.COG) || null,
+      dest: (v.destination ?? v.DESTINATION ?? '').trim(),
+      navStatus: parseInt(v.navStatus ?? v.STATUS ?? 0) || 0,
+    };
+  } catch(e) { return null; }
+}
+
+async function tryMarineTraffic(mmsi) {
+  try {
+    const data = await httpGet({
+      hostname: 'www.marinetraffic.com',
+      path: `/en/ais/get_info_window_data_json/mmsi:${mmsi}`,
+      method: 'GET',
+      timeout: 8000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+        'Accept': 'application/json, text/javascript, */*',
+        'X-Requested-With': 'XMLHttpRequest',
+        'Referer': 'https://www.marinetraffic.com/',
+      },
+    });
+    if (!data) return null;
+    console.log(`[fallback] marinetraffic raw(${mmsi}): ${data.slice(0,200)}`);
+    const j = JSON.parse(data);
+    const v = j.data ?? j;
+    const lat = parseFloat(v.LAT ?? v.lat) || null;
+    const lng = parseFloat(v.LON ?? v.lng) || null;
+    if (!lat || !lng) return null;
+    return {
+      name: (v.SHIPNAME ?? v.name ?? '').trim(),
+      lat, lng,
+      sog: parseFloat(v.SPEED ?? v.speed) || null,
+      cog: parseFloat(v.COURSE ?? v.course) || null,
+      dest: (v.DESTINATION ?? v.destination ?? '').trim(),
+      navStatus: parseInt(v.NAVSTAT ?? v.navStatus ?? 0) || 0,
+    };
+  } catch(e) { return null; }
 }
 
 async function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -336,7 +356,7 @@ async function runFallbackPoller() {
     const silent = now - (lastAisMessage[mmsi] || 0);
     if (silent < FALLBACK_THRESHOLD_MS) continue;
     console.log(`[fallback] ${mmsi} silent ${Math.round(silent/60000)}m — polling VesselFinder`);
-    const d = await fetchVesselFinder(mmsi);
+    const d = await fetchVesselPosition(mmsi);
     await sleep(2000); // 2s delay between requests to avoid rate limiting
     if (!d || !d.lat) { console.log(`[fallback] ${mmsi} — no data`); continue; }
     console.log(`[fallback] ${mmsi} — ${d.lat.toFixed(3)},${d.lng.toFixed(3)} sog:${d.sog}`);
