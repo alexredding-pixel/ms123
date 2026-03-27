@@ -247,7 +247,13 @@ wss.on('connection', browserSocket => {
       }
     } catch (e) {}
     // Do NOT forward subscription to aisstream — proxy manages that directly.
-    // Forward any other message types (none expected currently).
+    // Handle browser-pushed fallback position data
+    try {
+      const msg = JSON.parse(data.toString());
+      if (msg._type === 'fallback_position') {
+        handleBrowserFallback(msg);
+      }
+    } catch(e) {}
   });
 
   browserSocket.on('close', () => {
@@ -261,113 +267,50 @@ wss.on('connection', browserSocket => {
 // ── VESSELFINDER FALLBACK POLLER ──────────────────────────────────────────────
 const https = require('https');
 
-// Fallback position fetch using Puppeteer (headless Chrome)
-// Puppeteer looks like a real browser so sites can't block it server-side
-let puppeteerBrowser = null;
-
-async function getBrowser() {
-  if (puppeteerBrowser && puppeteerBrowser.isConnected()) return puppeteerBrowser;
-  try {
-    const puppeteer = require('puppeteer');
-    puppeteerBrowser = await puppeteer.launch({
-      headless: 'new',
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--single-process',
-      ],
-    });
-    console.log('[fallback] Puppeteer browser launched');
-    return puppeteerBrowser;
-  } catch(e) {
-    console.log('[fallback] Puppeteer launch failed:', e.message);
-    return null;
-  }
+// Browser-pushed fallback
+// The dashboard fetches VesselFinder directly (no IP block, runs in user's browser)
+// and sends position data to the proxy via a special WebSocket message type.
+// The proxy then forwards it to all other connected browsers as a normal AIS message.
+// This function is a no-op — position data arrives via handleBrowserFallback() below.
+async function fetchVesselPosition(mmsi) {
+  return null; // position comes from browser push, not server fetch
 }
 
-async function fetchVesselPosition(mmsi) {
-  const browser = await getBrowser();
-  if (!browser) return null;
+// Called when browser sends a fallback position update
+function handleBrowserFallback(payload) {
+  const { mmsi, lat, lng, sog, cog, dest, navStatus, name } = payload;
+  if (!mmsi || !lat || !lng) return;
 
-  let page = null;
-  try {
-    page = await browser.newPage();
+  console.log(`[fallback] browser-pushed ${mmsi}: ${lat.toFixed(3)},${lng.toFixed(3)} sog:${sog}`);
 
-    // Intercept the API call VesselFinder makes when you click a vessel
-    let vesselData = null;
-    await page.setRequestInterception(true);
+  // Update last-seen so poller doesn't immediately re-request
+  lastAisMessage[mmsi] = Date.now();
 
-    page.on('request', req => req.continue());
-    page.on('response', async res => {
-      const url = res.url();
-      if (url.includes('/api/pub/click/') || url.includes(`mmsi=${mmsi}`) || url.includes(`/${mmsi}`)) {
-        try {
-          const text = await res.text();
-          const j = JSON.parse(text);
-          const lat = parseFloat(j.y ?? j.lat ?? j.latitude) || null;
-          const lng = parseFloat(j.x ?? j.lng ?? j.longitude) || null;
-          if (lat && lng) {
-            vesselData = {
-              name: (j.name || '').trim(),
-              lat, lng,
-              sog: parseFloat(j.ss ?? j.sog) || null,
-              cog: parseFloat(j.cu ?? j.cog) || null,
-              dest: (j.dest ?? j.destination ?? '').trim(),
-              navStatus: parseInt(j['.ns'] ?? j.navStatus ?? 0) || 0,
-            };
-          }
-        } catch(e) {}
-      }
-    });
+  // Build synthetic PositionReport and forward to all browsers
+  const posMsg = JSON.stringify({
+    MessageType: 'PositionReport',
+    _source: 'browser-fallback',
+    MetaData: { MMSI: parseInt(mmsi), MMSI_String: String(mmsi),
+                ShipName: name, latitude: lat, longitude: lng },
+    Message: { PositionReport: {
+      Latitude: lat, Longitude: lng, Cog: cog,
+      Sog: sog, NavigationalStatus: navStatus || 0,
+    }},
+  });
+  const staticMsg = dest ? JSON.stringify({
+    MessageType: 'ShipStaticData',
+    _source: 'browser-fallback',
+    MetaData: { MMSI: parseInt(mmsi), MMSI_String: String(mmsi),
+                ShipName: name, latitude: lat, longitude: lng },
+    Message: { ShipStaticData: { Destination: dest, Name: name } },
+  }) : null;
 
-    // Navigate to the vessel page — VesselFinder loads data via XHR on page load
-    await page.goto(`https://www.vesselfinder.com/?mmsi=${mmsi}`, {
-      waitUntil: 'networkidle2',
-      timeout: 20000,
-    });
-
-    // Also try clicking the vessel marker if it loaded on map
-    // Give XHR calls a moment to complete
-    await new Promise(r => setTimeout(r, 2000));
-
-    if (vesselData) {
-      console.log(`[fallback] Puppeteer hit for ${mmsi}: ${vesselData.lat.toFixed(3)},${vesselData.lng.toFixed(3)}`);
-    } else {
-      // Try direct API call from within the browser context (bypasses server-side IP blocks)
-      vesselData = await page.evaluate(async (mmsi) => {
-        try {
-          const res = await fetch(`/api/pub/click/${mmsi}`, {
-            headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
-          });
-          const j = await res.json();
-          const lat = parseFloat(j.y ?? j.lat) || null;
-          const lng = parseFloat(j.x ?? j.lng) || null;
-          if (!lat || !lng) return null;
-          return {
-            name: (j.name || '').trim(), lat, lng,
-            sog: parseFloat(j.ss ?? j.sog) || null,
-            cog: parseFloat(j.cu ?? j.cog) || null,
-            dest: (j.dest ?? j.destination ?? '').trim(),
-            navStatus: parseInt(j['.ns'] ?? 0) || 0,
-          };
-        } catch(e) { return null; }
-      }, mmsi);
-      if (vesselData) {
-        console.log(`[fallback] Puppeteer eval hit for ${mmsi}: ${vesselData.lat.toFixed(3)},${vesselData.lng.toFixed(3)}`);
-      } else {
-        console.log(`[fallback] Puppeteer no data for ${mmsi}`);
-      }
+  wss.clients.forEach(c => {
+    if (c.readyState === 1) {
+      c.send(posMsg);
+      if (staticMsg) c.send(staticMsg);
     }
-
-    return vesselData;
-  } catch(e) {
-    console.log(`[fallback] Puppeteer error for ${mmsi}: ${e.message}`);
-    return null;
-  } finally {
-    if (page) await page.close().catch(() => {});
-  }
+  });
 }
 
 async function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }

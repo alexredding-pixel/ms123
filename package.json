@@ -10,7 +10,6 @@
     "start": "node ais-proxy.js"
   },
   "dependencies": {
-    "ws": "8.17.1",
-    "puppeteer": "21.11.0"
+    "ws": "8.17.1"
   }
 }
