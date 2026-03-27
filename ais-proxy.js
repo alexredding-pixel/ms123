@@ -42,6 +42,24 @@ const lastDest     = {};
 const lastAisMessage = {};
 
 // ── EVENT LOG ─────────────────────────────────────────────────────────────────
+// Last-known position store — one entry per MMSI, overwritten each time
+const POSITIONS_FILE = path.join(__dirname, 'vessel-positions.json');
+
+function loadPositions() {
+  try {
+    if (fs.existsSync(POSITIONS_FILE)) return JSON.parse(fs.readFileSync(POSITIONS_FILE, 'utf8'));
+  } catch(e) {}
+  return {};
+}
+
+function logPosition(pos) {
+  try {
+    const positions = loadPositions();
+    positions[pos.mmsi] = pos; // overwrite with latest
+    fs.writeFileSync(POSITIONS_FILE, JSON.stringify(positions, null, 2));
+  } catch(e) {}
+}
+
 function loadEvents() {
   try {
     if (fs.existsSync(EVENTS_FILE)) return JSON.parse(fs.readFileSync(EVENTS_FILE, 'utf8'));
@@ -86,39 +104,57 @@ function saveConfig() {
 // ── AIS MESSAGE INSPECTION ────────────────────────────────────────────────────
 function inspectMessage(raw) {
   try {
-    const msg = JSON.parse(raw);
-    if (msg.MessageType !== 'ShipStaticData') return;
+    const msg  = JSON.parse(raw);
     const meta = msg.MetaData || {};
-    const sd   = msg.Message?.ShipStaticData || {};
     const mmsi = String(meta.MMSI_String || meta.MMSI || '');
-    const dest = (sd.Destination || '').trim().toUpperCase();
-    if (!mmsi || !dest || dest === 'UNKNOWN' || dest === '0') return;
+    if (!mmsi) return;
 
-    let etaStr = null;
-    if (sd.Eta) {
-      const e = sd.Eta;
-      if (e.Month && e.Day) {
-        const yr = new Date().getFullYear();
-        etaStr = `${yr}-${String(e.Month).padStart(2,'0')}-${String(e.Day).padStart(2,'0')} ${String(e.Hour||0).padStart(2,'0')}:${String(e.Minute||0).padStart(2,'0')} UTC`;
-      }
-    }
-
-    const destChanged = lastDest[mmsi] !== dest;
-    const etaChanged  = etaStr && lastDest[mmsi + '_eta'] !== etaStr;
-    if (!destChanged && !etaChanged) return;
-
-    lastDest[mmsi] = dest;
-    if (etaStr) lastDest[mmsi + '_eta'] = etaStr;
-
-    // Track that this MMSI is alive on aisstream
     lastAisMessage[mmsi] = Date.now();
 
-    logEvent({
-      mmsi, destination: dest, eta: etaStr,
-      lat: meta.latitude ?? null, lng: meta.longitude ?? null,
-      timestamp: new Date().toISOString(),
-      destChanged,
-    });
+    // ── Position Report: persist last known position ──────────────────────────
+    if (msg.MessageType === 'PositionReport') {
+      const pr  = msg.Message?.PositionReport || {};
+      const lat = meta.latitude  ?? pr.Latitude  ?? null;
+      const lng = meta.longitude ?? pr.Longitude ?? null;
+      const sog = pr.Sog  ?? null;
+      const cog = pr.Cog  ?? null;
+      const nav = pr.NavigationalStatus ?? null;
+      if (lat && lng) {
+        logPosition({ mmsi, lat, lng, sog, cog, navStatus: nav,
+                      timestamp: new Date().toISOString() });
+      }
+      return;
+    }
+
+    // ── ShipStaticData: log destination/ETA changes ───────────────────────────
+    if (msg.MessageType === 'ShipStaticData') {
+      const sd   = msg.Message?.ShipStaticData || {};
+      const dest = (sd.Destination || '').trim().toUpperCase();
+      if (!dest || dest === 'UNKNOWN' || dest === '0') return;
+
+      let etaStr = null;
+      if (sd.Eta) {
+        const e = sd.Eta;
+        if (e.Month && e.Day) {
+          const yr = new Date().getFullYear();
+          etaStr = `${yr}-${String(e.Month).padStart(2,'0')}-${String(e.Day).padStart(2,'0')} ${String(e.Hour||0).padStart(2,'0')}:${String(e.Minute||0).padStart(2,'0')} UTC`;
+        }
+      }
+
+      const destChanged = lastDest[mmsi] !== dest;
+      const etaChanged  = etaStr && lastDest[mmsi + '_eta'] !== etaStr;
+      if (!destChanged && !etaChanged) return;
+
+      lastDest[mmsi] = dest;
+      if (etaStr) lastDest[mmsi + '_eta'] = etaStr;
+
+      logEvent({
+        mmsi, destination: dest, eta: etaStr,
+        lat: meta.latitude ?? null, lng: meta.longitude ?? null,
+        timestamp: new Date().toISOString(),
+        destChanged,
+      });
+    }
   } catch (e) {}
 }
 
@@ -179,6 +215,12 @@ const httpServer = http.createServer((req, res) => {
   if (req.method === 'GET' && req.url === '/events') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(loadEvents()));
+    return;
+  }
+
+  if (req.method === 'GET' && req.url === '/positions') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(loadPositions()));
     return;
   }
 

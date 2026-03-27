@@ -2173,6 +2173,44 @@ const PROXY_BASE = location.protocol === 'file:'
   ? 'https://ms123-production.up.railway.app'
   : location.origin;
 
+async function fetchLastKnownPositions() {
+  try {
+    const res = await fetch(PROXY_BASE + '/positions');
+    if (!res.ok) return;
+    const positions = await res.json(); // { mmsi: { lat, lng, sog, cog, navStatus, timestamp } }
+
+    shipments.forEach((s, idx) => {
+      if (!s.mmsi || !positions[s.mmsi]) return;
+      const p = positions[s.mmsi];
+
+      // Only apply if we don't already have a fresher position from localStorage
+      const savedTs = s.lastUpdateTs || 0;
+      const proxyTs = new Date(p.timestamp).getTime();
+      if (proxyTs <= savedTs) return;
+
+      // Apply the proxy's persisted position
+      s.lat         = p.lat;
+      s.lng         = p.lng;
+      s.speed       = p.sog != null ? p.sog.toFixed(1) + ' kn' : s.speed;
+      s.course      = p.cog != null ? Math.round(p.cog) + ' deg' : s.course;
+      s.lastUpdateTs = proxyTs;
+      s.lastUpdate   = new Date(p.timestamp).toLocaleTimeString('en-GB',
+        { hour: '2-digit', minute: '2-digit' }) + ' (prev)';
+
+      updateRow(idx);
+      addOrMoveMarker(idx);
+      console.log('[positions] Restored ' + s.vessel + ' from proxy: '
+        + s.lat.toFixed(3) + ',' + s.lng.toFixed(3)
+        + ' (' + s.lastUpdate + ')');
+    });
+
+    // Start dead reckoning from restored positions
+    applyDeadReckoning();
+  } catch(e) {
+    console.log('[positions] Could not fetch last-known positions:', e.message);
+  }
+}
+
 async function fetchVoyageEvents() {
   try {
     const res = await fetch(PROXY_BASE + '/events');
@@ -2570,6 +2608,11 @@ window.addEventListener('load', () => {
 
   // Fetch voyage event history from proxy on load
   fetchVoyageEvents();
+
+  // Fetch last-known positions from proxy (persisted 24/7 by Railway)
+  // This seeds dead reckoning even if the user wasn't online when the AIS
+  // update arrived, so position estimates survive multi-day gaps.
+  fetchLastKnownPositions();
 
   // Dead reckoning — update estimated positions every minute
   setInterval(applyDeadReckoning, DR_UPDATE_INTERVAL);
