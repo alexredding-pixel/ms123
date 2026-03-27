@@ -268,9 +268,12 @@ function fetchVesselFinder(mmsi) {
       timeout: 8000,
     }, (res) => {
       let data = '';
+      console.log(`[fallback] HTTP ${res.statusCode} for ${mmsi}`);
       res.on('data', c => data += c);
       res.on('end', () => {
         try {
+          // Log raw response for debugging (first 300 chars)
+          console.log(`[fallback] raw response for ${mmsi}: ${data.slice(0, 300)}`);
           const j = JSON.parse(data);
           if (Array.isArray(j) && j.length >= 6) {
             resolve({ name: j[0]||'', lat: parseFloat(j[2])||null, lng: parseFloat(j[3])||null,
@@ -280,8 +283,14 @@ function fetchVesselFinder(mmsi) {
             resolve({ name: j.name||'', lat: parseFloat(j.lat)||null, lng: parseFloat(j.lng)||null,
                       cog: parseFloat(j.cog)||null, sog: parseFloat(j.sog)||null,
                       dest: (j.destination||'').trim(), navStatus: parseInt(j.navigationStatus)||0 });
-          } else { resolve(null); }
-        } catch(e) { resolve(null); }
+          } else {
+            console.log(`[fallback] unrecognised format for ${mmsi}:`, JSON.stringify(j).slice(0, 200));
+            resolve(null);
+          }
+        } catch(e) {
+          console.log(`[fallback] parse error for ${mmsi}: ${e.message} — raw: ${data.slice(0,200)}`);
+          resolve(null);
+        }
       });
     });
     req.on('error', () => resolve(null));
