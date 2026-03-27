@@ -263,44 +263,71 @@ const https = require('https');
 
 function fetchVesselFinder(mmsi) {
   return new Promise((resolve) => {
-    const req = https.get(`https://www.vesselfinder.com/api/pub/click/${mmsi}`, {
-      headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' },
-      timeout: 8000,
-    }, (res) => {
+    // Try the public VesselFinder vessel page as fallback source
+    const options = {
+      hostname: 'www.vesselfinder.com',
+      path: `/api/pub/click/${mmsi}`,
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'application/json, text/javascript, */*; q=0.01',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Referer': 'https://www.vesselfinder.com/',
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+      timeout: 10000,
+    };
+    const req = https.request(options, (res) => {
+      console.log(`[fallback] HTTP ${res.statusCode} for ${mmsi}`);
+      // Follow redirects
+      if (res.statusCode === 301 || res.statusCode === 302) {
+        console.log(`[fallback] redirect to: ${res.headers.location}`);
+        resolve(null); return;
+      }
+      if (res.statusCode !== 200) {
+        res.resume(); // drain
+        resolve(null); return;
+      }
       let data = '';
       res.on('data', c => data += c);
       res.on('end', () => {
+        console.log(`[fallback] raw(${mmsi}): ${data.slice(0, 300)}`);
         try {
-          console.log(`[fallback] raw(${mmsi}): ${data.slice(0,400)}`);
           const j = JSON.parse(data);
-          // VesselFinder format: { ss=speed, cu=course, y=lat, x=lng, dest, .ns=navStatus, name }
-          // Field names confirmed from live response
-          const lat = parseFloat(j.y) || null;
-          const lng = parseFloat(j.x) || null;
-          const sog = parseFloat(j.ss) || null;
-          const cog = parseFloat(j.cu) || null;
-          const name = (j.name || '').trim();
-          const dest = (j.dest || '').trim();
-          const navStatus = parseInt(j['.ns']) || 0;
-
+          // Try multiple possible coordinate field names
+          const lat = parseFloat(j.y ?? j.lat ?? j.latitude ?? j.la) || null;
+          const lng = parseFloat(j.x ?? j.lng ?? j.longitude ?? j.lo) || null;
+          const sog = parseFloat(j.ss ?? j.sog ?? j.speed) || null;
+          const cog = parseFloat(j.cu ?? j.cog ?? j.course) || null;
+          const name = (j.name ?? j.NAME ?? '').trim();
+          const dest = (j.dest ?? j.destination ?? j.DEST ?? '').trim();
+          const navStatus = parseInt(j['.ns'] ?? j.ns ?? j.navStatus ?? 0) || 0;
           if (lat && lng) {
             resolve({ name, lat, lng, cog, sog, dest, navStatus });
           } else {
-            // Log all keys so we can find the coordinate field names
-            console.log(`[fallback] keys for ${mmsi}: ${Object.keys(j).join(',')}`);
-            console.log(`[fallback] no position for ${mmsi} — dest:${dest} name:${name} y:${j.y} x:${j.x} lat:${j.lat} lon:${j.lon} la:${j.la} lo:${j.lo}`);
+            console.log(`[fallback] no coords for ${mmsi}, keys: ${Object.keys(j).join(',')}`);
             resolve(null);
           }
         } catch(e) {
-          console.log(`[fallback] parse error for ${mmsi}: ${e.message}`);
+          console.log(`[fallback] parse error for ${mmsi}: ${e.message} body: ${data.slice(0,100)}`);
           resolve(null);
         }
       });
     });
-    req.on('error', () => resolve(null));
-    req.on('timeout', () => { req.destroy(); resolve(null); });
+    req.on('error', (e) => {
+      console.log(`[fallback] request error for ${mmsi}: ${e.message}`);
+      resolve(null);
+    });
+    req.on('timeout', () => {
+      console.log(`[fallback] timeout for ${mmsi}`);
+      req.destroy();
+      resolve(null);
+    });
+    req.end();
   });
 }
+
+async function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 async function runFallbackPoller() {
   if (trackedMmsis.length === 0) return;
@@ -310,6 +337,7 @@ async function runFallbackPoller() {
     if (silent < FALLBACK_THRESHOLD_MS) continue;
     console.log(`[fallback] ${mmsi} silent ${Math.round(silent/60000)}m — polling VesselFinder`);
     const d = await fetchVesselFinder(mmsi);
+    await sleep(2000); // 2s delay between requests to avoid rate limiting
     if (!d || !d.lat) { console.log(`[fallback] ${mmsi} — no data`); continue; }
     console.log(`[fallback] ${mmsi} — ${d.lat.toFixed(3)},${d.lng.toFixed(3)} sog:${d.sog}`);
     // Send PositionReport with location data
