@@ -1395,6 +1395,8 @@ function makeShipment(overrides) {
     // Slip tracking
     slipDays: 0,          // current estimated slip vs user's booked arrival date
     firstEtas: {},        // { 'ROTTERDAM': '2026-03-28 06:00 UTC', ... } first ETA seen per waypoint
+    lastEtaByDest: {},    // { 'ROTTERDAM': '2026-03-31 06:00 UTC', ... } latest ETA seen per waypoint
+    frozenSlipMs: 0,      // accumulated slip from waypoints the vessel has already passed
   }, overrides);
 }
 
@@ -1432,6 +1434,8 @@ function saveShipments() {
       // Slip tracking state
       slipDays: s.slipDays || 0,
       firstEtas: s.firstEtas || {},
+      lastEtaByDest: s.lastEtaByDest || {},
+      frozenSlipMs: s.frozenSlipMs || 0,
       revisedEta: s.revisedEta || null,
     }));
     localStorage.setItem('ms_shipments', JSON.stringify(toSave));
@@ -1612,21 +1616,30 @@ function handleAISMessage(msg) {
   // Ship Static Data (has destination, ETA, name)
   if (msg.MessageType === 'ShipStaticData') {
     const sd = msg.Message?.ShipStaticData || {};
+    const newDest = sd.Destination ? sd.Destination.trim() : s.destination;
+    const prevDest = s.destination;
+
+    // Freeze slip from previous waypoint when destination changes
+    if (newDest && prevDest && newDest.toUpperCase() !== (prevDest || '').toUpperCase()) {
+      freezeWaypointSlip(s, (prevDest || '').toUpperCase());
+    }
     if (sd.Destination) s.destination = sd.Destination.trim();
 
     if (sd.Eta) {
       const e = sd.Eta;
       if (e.Month && e.Day) {
-        const etaStr = `ETA: ${String(e.Month).padStart(2,'0')}/${String(e.Day).padStart(2,'0')} ${String(e.Hour||0).padStart(2,'0')}:${String(e.Minute||0).padStart(2,'0')} UTC`;
+        const etaStr = 'ETA: ' + String(e.Month).padStart(2,'0') + '/' + String(e.Day).padStart(2,'0') + ' ' + String(e.Hour||0).padStart(2,'0') + ':' + String(e.Minute||0).padStart(2,'0') + ' UTC';
         s.eta = etaStr;
 
-        // Record first-seen ETA for this destination (for slip calculation)
         const dest = (sd.Destination || '').trim().toUpperCase();
-        if (dest && s.firstEtas && !s.firstEtas[dest]) {
-          s.firstEtas[dest] = etaStr;
+
+        // Track latest ETA seen for this destination (for freezing when vessel moves on)
+        if (dest) {
+          if (!s.lastEtaByDest) s.lastEtaByDest = {};
+          s.lastEtaByDest[dest] = etaStr;
         }
 
-        // Calculate slip vs booked arrival date
+        // Calculate cumulative slip
         calculateSlip(s, dest, etaStr);
 
         // Update the last timeline event if still TBC
@@ -1674,27 +1687,52 @@ function parseEtaDate(etaStr) {
 function calculateSlip(s, dest, currentEtaStr) {
   if (!s.firstEtas || !dest) return;
 
-  const firstEtaStr = s.firstEtas[dest];
-  if (!firstEtaStr) return; // No baseline to compare against
+  // Record first-seen ETA for this destination as baseline
+  if (!s.firstEtas[dest]) {
+    s.firstEtas[dest] = currentEtaStr;
+    return; // No drift yet — this IS the baseline
+  }
 
-  const firstEta   = parseEtaDate(firstEtaStr);
+  // Measure drift on the current waypoint
+  const firstEta   = parseEtaDate(s.firstEtas[dest]);
   const currentEta = parseEtaDate(currentEtaStr);
   if (!firstEta || !currentEta) return;
 
-  const slipMs   = currentEta - firstEta;
-  const slipDays = Math.round(slipMs / 86400000);
-  if (slipDays === s.slipDays) return; // No change
+  const currentWaypointSlipMs = currentEta - firstEta;
 
+  // Also accumulate slip from all previously-passed waypoints.
+  // When a vessel moves past a waypoint (destination changes), we freeze
+  // that waypoint's final slip in s.frozenSlipMs so it isn't lost.
+  const frozenMs  = s.frozenSlipMs || 0;
+  const totalSlipMs = frozenMs + currentWaypointSlipMs;
+  const slipDays  = Math.round(totalSlipMs / 86400000);
+
+  if (slipDays === s.slipDays) return;
   s.slipDays = slipDays;
 
-  // If user set a booked arrival date, estimate revised delivery
-  if (s.arriveDate && slipDays !== 0) {
-    const booked  = new Date(s.arriveDate);
-    const revised = new Date(booked.getTime() + slipDays * 86400000);
-    s.revisedEta  = revised.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-  } else {
-    s.revisedEta = null;
+  // Propagate to revised final delivery date
+  if (s.arriveDate) {
+    if (slipDays !== 0) {
+      const revised = new Date(new Date(s.arriveDate).getTime() + slipDays * 86400000);
+      s.revisedEta  = revised.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    } else {
+      s.revisedEta = null;
+    }
   }
+}
+
+// Call when AIS destination changes — freeze the slip from the departing waypoint
+function freezeWaypointSlip(s, oldDest) {
+  if (!oldDest || !s.firstEtas || !s.firstEtas[oldDest]) return;
+  // What was the last ETA we saw for this destination?
+  const lastEtaStr = s.lastEtaByDest && s.lastEtaByDest[oldDest];
+  if (!lastEtaStr) return;
+  const firstEta = parseEtaDate(s.firstEtas[oldDest]);
+  const lastEta  = parseEtaDate(lastEtaStr);
+  if (!firstEta || !lastEta) return;
+  const slipMs = lastEta - firstEta;
+  s.frozenSlipMs = (s.frozenSlipMs || 0) + slipMs;
+  console.log('[slip] Froze ' + slipMs/3600000 + 'h slip from ' + oldDest + ' total frozen: ' + s.frozenSlipMs/3600000 + 'h');
 }
 
 // -- DOM HELPERS ---------------------------------------------------------------
@@ -2050,12 +2088,43 @@ let filterStatus  = '';
 let filterDest    = '';
 let sortBy        = '';
 
+function destMatchesFinal(s) {
+  // Returns true if the vessel's current AIS destination is the user's discharge port
+  if (!s.destination || !s.dest) return false;
+  const aisDest   = s.destination.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const userDest  = s.dest.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  // Match on first 4+ chars of the port name (handles GBFXT vs Felixstowe, UK)
+  const aisShort  = aisDest.slice(0, 5);
+  const userWords = userDest.split(/\s+/);
+  return userWords.some(w => w.length >= 4 && (aisDest.includes(w.slice(0,5)) || w.slice(0,5).includes(aisShort)));
+}
+
 function getDisplayEta(s) {
-  // Use booked arrive date + slip as the ETA to sort/display
+  const hasAisEta = s.eta && s.eta !== 'Awaiting live data...';
+
+  // If AIS is currently showing ETA to the final discharge port, use it directly —
+  // it's more accurate than booked date + slip estimate
+  if (hasAisEta && destMatchesFinal(s)) {
+    return s.eta.replace('ETA: ', '');
+  }
+
+  // Otherwise use revised ETA (booked date + accumulated slip)
   if (s.revisedEta) return s.revisedEta;
   if (s.arriveDate)  return s.arriveDate;
-  if (s.eta && s.eta !== 'Awaiting live data...') return s.eta;
+
+  // Fall back to raw AIS ETA (intermediate port — less meaningful for final delivery)
+  if (hasAisEta) return s.eta.replace('ETA: ', '');
   return null;
+}
+
+function etaSource(s) {
+  // Returns a label describing where the ETA came from — for display in the table
+  const hasAisEta = s.eta && s.eta !== 'Awaiting live data...';
+  if (hasAisEta && destMatchesFinal(s)) return 'ais-final';  // AIS to discharge port
+  if (s.revisedEta)                      return 'revised';    // booked + slip
+  if (s.arriveDate)                       return 'booked';    // user's original date
+  if (hasAisEta)                          return 'ais-next';  // AIS to intermediate port
+  return 'none';
 }
 
 function etaToMs(s) {
@@ -2091,12 +2160,23 @@ function renderTable() {
     const chipType = navStatusToChip(s.status);
     const iconType = s.status === 'Delayed' ? 'alert' : 'normal';
     const iconName = s.status === 'Delayed' ? 'warning' : 'inventory_2';
-    const eta      = getDisplayEta(s);
-    const etaDisplay = eta
-      ? (s.revisedEta
-          ? '<span style="font-weight:700;color:var(--on-surface);">' + eta + '</span>' + slipBadgeHtml(s)
-          : '<span style="color:var(--on-surface-variant);">' + eta + '</span>')
-      : '<span style="color:var(--outline-variant);">&#8212;</span>';
+    const eta    = getDisplayEta(s);
+    const source = etaSource(s);
+    let etaDisplay;
+    if (!eta) {
+      etaDisplay = '<span style="color:var(--outline-variant);">&#8212;</span>';
+    } else {
+      const badge =
+        source === 'ais-final'
+          ? ' <span style="font-size:0.5625rem;font-weight:800;background:rgba(12,82,22,0.12);color:var(--on-tertiary-fixed-variant);padding:2px 6px;border-radius:4px;letter-spacing:0.06em;">AIS</span>'
+        : source === 'revised'
+          ? slipBadgeHtml(s)
+        : source === 'ais-next'
+          ? ' <span style="font-size:0.5625rem;font-weight:800;background:rgba(0,23,54,0.08);color:var(--on-surface-variant);padding:2px 6px;border-radius:4px;letter-spacing:0.06em;">NEXT PORT</span>'
+        : '';
+      const bold = source === 'ais-final' || source === 'revised';
+      etaDisplay = '<span style="font-weight:' + (bold ? '700' : '400') + ';color:var(--on-surface);">' + eta + '</span>' + badge;
+    }
     return '<tr data-id="' + idx + '" onclick="openDetail(' + idx + ')" style="cursor:pointer;transition:background 0.12s;">'
       + '<td style="padding:20px 28px;white-space:nowrap;">'
       + '<div class="container-id-cell">'
