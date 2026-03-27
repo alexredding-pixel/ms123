@@ -27,6 +27,11 @@ let trackedMmsis   = [];
 let connectedCount = 0;
 const lastDest     = {};
 
+// Track last time each MMSI sent a message via aisstream
+const lastAisMessage = {}; // { mmsi: timestamp }
+const FALLBACK_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes with no aisstream signal
+const FALLBACK_INTERVAL_MS  = 5 * 60 * 1000; // poll VesselFinder every 5 minutes
+
 // ── EVENT LOG ─────────────────────────────────────────────────────────────────
 function loadEvents() {
   try {
@@ -96,6 +101,9 @@ function inspectMessage(raw) {
     lastDest[mmsi] = dest;
     if (etaStr) lastDest[mmsi + '_eta'] = etaStr;
 
+    // Track that this MMSI is alive on aisstream
+    lastAisMessage[mmsi] = Date.now();
+
     logEvent({
       mmsi, destination: dest, eta: etaStr,
       lat: meta.latitude ?? null, lng: meta.longitude ?? null,
@@ -133,6 +141,12 @@ function connectToAIS() {
 
   aisSocket.on('message', (data, isBinary) => {
     const raw = isBinary ? data.toString('utf8') : data.toString();
+    // Track last message time for this MMSI (for fallback poller)
+    try {
+      const m = JSON.parse(raw);
+      const mmsi = String(m?.MetaData?.MMSI_String || m?.MetaData?.MMSI || '');
+      if (mmsi) lastAisMessage[mmsi] = Date.now();
+    } catch(e) {}
     inspectMessage(raw);
     wss.clients.forEach(c => { if (c.readyState === WebSocket.OPEN) c.send(raw); });
   });
@@ -244,6 +258,64 @@ wss.on('connection', browserSocket => {
   browserSocket.on('error', err => console.error('[ws] Error:', err.message));
 });
 
+// ── VESSELFINDER FALLBACK POLLER ──────────────────────────────────────────────
+const https = require('https');
+
+function fetchVesselFinder(mmsi) {
+  return new Promise((resolve) => {
+    const req = https.get(`https://www.vesselfinder.com/api/pub/click/${mmsi}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' },
+      timeout: 8000,
+    }, (res) => {
+      let data = '';
+      res.on('data', c => data += c);
+      res.on('end', () => {
+        try {
+          const j = JSON.parse(data);
+          if (Array.isArray(j) && j.length >= 6) {
+            resolve({ name: j[0]||'', lat: parseFloat(j[2])||null, lng: parseFloat(j[3])||null,
+                      cog: parseFloat(j[4])||null, sog: parseFloat(j[5])||null,
+                      dest: (j[12]||'').trim(), navStatus: parseInt(j[11])||0 });
+          } else if (j && j.lat != null) {
+            resolve({ name: j.name||'', lat: parseFloat(j.lat)||null, lng: parseFloat(j.lng)||null,
+                      cog: parseFloat(j.cog)||null, sog: parseFloat(j.sog)||null,
+                      dest: (j.destination||'').trim(), navStatus: parseInt(j.navigationStatus)||0 });
+          } else { resolve(null); }
+        } catch(e) { resolve(null); }
+      });
+    });
+    req.on('error', () => resolve(null));
+    req.on('timeout', () => { req.destroy(); resolve(null); });
+  });
+}
+
+async function runFallbackPoller() {
+  if (trackedMmsis.length === 0) return;
+  const now = Date.now();
+  for (const mmsi of trackedMmsis) {
+    const silent = now - (lastAisMessage[mmsi] || 0);
+    if (silent < FALLBACK_THRESHOLD_MS) continue;
+    console.log(`[fallback] ${mmsi} silent ${Math.round(silent/60000)}m — polling VesselFinder`);
+    const d = await fetchVesselFinder(mmsi);
+    if (!d || !d.lat) { console.log(`[fallback] ${mmsi} — no data`); continue; }
+    console.log(`[fallback] ${mmsi} — ${d.lat.toFixed(3)},${d.lng.toFixed(3)} sog:${d.sog}`);
+    const msg = JSON.stringify({
+      MessageType: 'PositionReport',
+      _source: 'vesselfinder-fallback',
+      MetaData: { MMSI: parseInt(mmsi), MMSI_String: mmsi,
+                  ShipName: d.name, latitude: d.lat, longitude: d.lng },
+      Message: { PositionReport: {
+        Latitude: d.lat, Longitude: d.lng, Cog: d.cog,
+        Sog: d.sog, NavigationalStatus: d.navStatus,
+      }},
+    });
+    let sent = 0;
+    wss.clients.forEach(c => { if (c.readyState === 1) { c.send(msg); sent++; } });
+    lastAisMessage[mmsi] = Date.now();
+    console.log(`[fallback] ${mmsi} — forwarded to ${sent} browser(s)`);
+  }
+}
+
 // ── START ─────────────────────────────────────────────────────────────────────
 loadConfig();
 httpServer.listen(PROXY_PORT, () => {
@@ -252,7 +324,13 @@ httpServer.listen(PROXY_PORT, () => {
   console.log(`    GET  /events    -> voyage event log`);
   console.log(`    GET  /health    -> status`);
   console.log(`    POST /subscribe -> update vessels`);
+  console.log(`    VesselFinder fallback: every ${FALLBACK_INTERVAL_MS/60000}min for silent vessels`);
   console.log('');
   if (apiKey && trackedMmsis.length > 0) connectToAIS();
   else console.log('    Waiting for first browser connection...\n');
+
+  // Start the fallback poller
+  setInterval(runFallbackPoller, FALLBACK_INTERVAL_MS);
+  // Also run once after 30s startup delay so newly added vessels get data fast
+  setTimeout(runFallbackPoller, 30000);
 });
