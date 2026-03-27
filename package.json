@@ -3,10 +3,14 @@
   "version": "1.0.0",
   "description": "AIS WebSocket proxy for Maritime Sentinel",
   "main": "ais-proxy.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "start": "node ais-proxy.js"
   },
   "dependencies": {
-    "ws": "^8.18.0"
+    "ws": "8.17.1",
+    "puppeteer": "21.11.0"
   }
 }

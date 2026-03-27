@@ -261,90 +261,113 @@ wss.on('connection', browserSocket => {
 // ── VESSELFINDER FALLBACK POLLER ──────────────────────────────────────────────
 const https = require('https');
 
-// Try multiple public vessel data sources in order
+// Fallback position fetch using Puppeteer (headless Chrome)
+// Puppeteer looks like a real browser so sites can't block it server-side
+let puppeteerBrowser = null;
+
+async function getBrowser() {
+  if (puppeteerBrowser && puppeteerBrowser.isConnected()) return puppeteerBrowser;
+  try {
+    const puppeteer = require('puppeteer');
+    puppeteerBrowser = await puppeteer.launch({
+      headless: 'new',
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--single-process',
+      ],
+    });
+    console.log('[fallback] Puppeteer browser launched');
+    return puppeteerBrowser;
+  } catch(e) {
+    console.log('[fallback] Puppeteer launch failed:', e.message);
+    return null;
+  }
+}
+
 async function fetchVesselPosition(mmsi) {
-  // Source 1: myshiptracking.com public vessel info
-  const result = await tryMyShipTracking(mmsi);
-  if (result) return result;
-  // Source 2: MarineTraffic public vessel page (scrape lat/lng from HTML)
-  return await tryMarineTraffic(mmsi);
-}
+  const browser = await getBrowser();
+  if (!browser) return null;
 
-function httpGet(options) {
-  return new Promise((resolve) => {
-    const req = https.request(options, (res) => {
-      if (res.statusCode !== 200) { res.resume(); resolve(null); return; }
-      let data = '';
-      res.on('data', c => data += c);
-      res.on('end', () => resolve(data));
-    });
-    req.on('error', () => resolve(null));
-    req.on('timeout', () => { req.destroy(); resolve(null); });
-    req.end();
-  });
-}
-
-async function tryMyShipTracking(mmsi) {
+  let page = null;
   try {
-    const data = await httpGet({
-      hostname: 'www.myshiptracking.com',
-      path: `/vessels?mmsi=${mmsi}&type=json`,
-      method: 'GET',
-      timeout: 8000,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-        'Accept': 'application/json',
-        'Referer': 'https://www.myshiptracking.com/',
-      },
-    });
-    if (!data) return null;
-    console.log(`[fallback] myshiptracking raw(${mmsi}): ${data.slice(0,200)}`);
-    const j = JSON.parse(data);
-    const v = Array.isArray(j) ? j[0] : j;
-    const lat = parseFloat(v.lat ?? v.latitude ?? v.LAT) || null;
-    const lng = parseFloat(v.lng ?? v.lon ?? v.longitude ?? v.LON) || null;
-    if (!lat || !lng) return null;
-    return {
-      name: (v.name ?? v.SHIPNAME ?? '').trim(),
-      lat, lng,
-      sog: parseFloat(v.speed ?? v.SOG) || null,
-      cog: parseFloat(v.course ?? v.COG) || null,
-      dest: (v.destination ?? v.DESTINATION ?? '').trim(),
-      navStatus: parseInt(v.navStatus ?? v.STATUS ?? 0) || 0,
-    };
-  } catch(e) { return null; }
-}
+    page = await browser.newPage();
 
-async function tryMarineTraffic(mmsi) {
-  try {
-    const data = await httpGet({
-      hostname: 'www.marinetraffic.com',
-      path: `/en/ais/get_info_window_data_json/mmsi:${mmsi}`,
-      method: 'GET',
-      timeout: 8000,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-        'Accept': 'application/json, text/javascript, */*',
-        'X-Requested-With': 'XMLHttpRequest',
-        'Referer': 'https://www.marinetraffic.com/',
-      },
+    // Intercept the API call VesselFinder makes when you click a vessel
+    let vesselData = null;
+    await page.setRequestInterception(true);
+
+    page.on('request', req => req.continue());
+    page.on('response', async res => {
+      const url = res.url();
+      if (url.includes('/api/pub/click/') || url.includes(`mmsi=${mmsi}`) || url.includes(`/${mmsi}`)) {
+        try {
+          const text = await res.text();
+          const j = JSON.parse(text);
+          const lat = parseFloat(j.y ?? j.lat ?? j.latitude) || null;
+          const lng = parseFloat(j.x ?? j.lng ?? j.longitude) || null;
+          if (lat && lng) {
+            vesselData = {
+              name: (j.name || '').trim(),
+              lat, lng,
+              sog: parseFloat(j.ss ?? j.sog) || null,
+              cog: parseFloat(j.cu ?? j.cog) || null,
+              dest: (j.dest ?? j.destination ?? '').trim(),
+              navStatus: parseInt(j['.ns'] ?? j.navStatus ?? 0) || 0,
+            };
+          }
+        } catch(e) {}
+      }
     });
-    if (!data) return null;
-    console.log(`[fallback] marinetraffic raw(${mmsi}): ${data.slice(0,200)}`);
-    const j = JSON.parse(data);
-    const v = j.data ?? j;
-    const lat = parseFloat(v.LAT ?? v.lat) || null;
-    const lng = parseFloat(v.LON ?? v.lng) || null;
-    if (!lat || !lng) return null;
-    return {
-      name: (v.SHIPNAME ?? v.name ?? '').trim(),
-      lat, lng,
-      sog: parseFloat(v.SPEED ?? v.speed) || null,
-      cog: parseFloat(v.COURSE ?? v.course) || null,
-      dest: (v.DESTINATION ?? v.destination ?? '').trim(),
-      navStatus: parseInt(v.NAVSTAT ?? v.navStatus ?? 0) || 0,
-    };
-  } catch(e) { return null; }
+
+    // Navigate to the vessel page — VesselFinder loads data via XHR on page load
+    await page.goto(`https://www.vesselfinder.com/?mmsi=${mmsi}`, {
+      waitUntil: 'networkidle2',
+      timeout: 20000,
+    });
+
+    // Also try clicking the vessel marker if it loaded on map
+    // Give XHR calls a moment to complete
+    await new Promise(r => setTimeout(r, 2000));
+
+    if (vesselData) {
+      console.log(`[fallback] Puppeteer hit for ${mmsi}: ${vesselData.lat.toFixed(3)},${vesselData.lng.toFixed(3)}`);
+    } else {
+      // Try direct API call from within the browser context (bypasses server-side IP blocks)
+      vesselData = await page.evaluate(async (mmsi) => {
+        try {
+          const res = await fetch(`/api/pub/click/${mmsi}`, {
+            headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+          });
+          const j = await res.json();
+          const lat = parseFloat(j.y ?? j.lat) || null;
+          const lng = parseFloat(j.x ?? j.lng) || null;
+          if (!lat || !lng) return null;
+          return {
+            name: (j.name || '').trim(), lat, lng,
+            sog: parseFloat(j.ss ?? j.sog) || null,
+            cog: parseFloat(j.cu ?? j.cog) || null,
+            dest: (j.dest ?? j.destination ?? '').trim(),
+            navStatus: parseInt(j['.ns'] ?? 0) || 0,
+          };
+        } catch(e) { return null; }
+      }, mmsi);
+      if (vesselData) {
+        console.log(`[fallback] Puppeteer eval hit for ${mmsi}: ${vesselData.lat.toFixed(3)},${vesselData.lng.toFixed(3)}`);
+      } else {
+        console.log(`[fallback] Puppeteer no data for ${mmsi}`);
+      }
+    }
+
+    return vesselData;
+  } catch(e) {
+    console.log(`[fallback] Puppeteer error for ${mmsi}: ${e.message}`);
+    return null;
+  } finally {
+    if (page) await page.close().catch(() => {});
+  }
 }
 
 async function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
