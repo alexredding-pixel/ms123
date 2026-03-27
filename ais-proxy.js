@@ -166,6 +166,7 @@ const httpServer = http.createServer((req, res) => {
       aisConnected: aisSocket?.readyState === WebSocket.OPEN,
       browsers: connectedCount,
       vessels: trackedMmsis.length,
+      mmsis: trackedMmsis,
       events: loadEvents().length,
       uptime: Math.round(process.uptime()) + 's',
     }));
