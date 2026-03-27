@@ -761,6 +761,61 @@ tr.selected .row-chevron { background: var(--primary-fixed); color: var(--primar
 }
 .detail-btn-secondary:hover { background: var(--surface-container-highest); }
 
+/* ── SEARCH + FILTER/SORT CONTROLS ─────────── */
+.search-wrap {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--surface-container-high);
+  border-radius: 10px; padding: 0 12px;
+  height: 36px; min-width: 260px;
+  transition: box-shadow 0.15s;
+}
+.search-wrap:focus-within { box-shadow: 0 0 0 2px var(--surface-tint); }
+.search-input {
+  border: none; outline: none; background: transparent;
+  font-size: 0.875rem; font-family: inherit; color: var(--on-surface);
+  flex: 1; min-width: 0;
+}
+.search-input::placeholder { color: var(--outline-variant); }
+.search-clear {
+  background: none; border: none; cursor: pointer; padding: 0;
+  color: var(--on-surface-variant); display: flex; align-items: center;
+}
+.dropdown-menu {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 100;
+  background: var(--surface-container-lowest);
+  border: 1px solid var(--surface-container-high);
+  border-radius: 14px; padding: 8px 0;
+  min-width: 220px;
+  box-shadow: 0 12px 32px rgba(0,23,54,0.14);
+}
+.dropdown-section-title {
+  font-size: 0.5625rem; font-weight: 800; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--on-surface-variant);
+  padding: 8px 16px 4px;
+}
+.dropdown-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 16px; font-size: 0.875rem; cursor: pointer;
+  color: var(--on-surface); transition: background 0.1s;
+}
+.dropdown-item:hover { background: var(--surface-container-low); }
+.dropdown-item input[type="radio"],
+.dropdown-item input[type="checkbox"] {
+  accent-color: var(--primary); width: 15px; height: 15px; cursor: pointer;
+}
+.dropdown-divider { height: 1px; background: var(--surface-container-high); margin: 6px 0; }
+.dropdown-clear {
+  width: 100%; background: none; border: none; cursor: pointer;
+  text-align: left; padding: 8px 16px;
+  font-size: 0.8125rem; font-weight: 700;
+  color: var(--secondary); font-family: inherit;
+}
+.dropdown-clear:hover { background: var(--surface-container-low); }
+.action-btn.active {
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+}
+
 /* ── ADD SHIPMENT MODAL ──────────────────── */
 .add-modal-backdrop {
   position: fixed; inset: 0; z-index: 200;
@@ -1063,14 +1118,46 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
       <div class="table-header">
         <div class="table-title">Active Shipments</div>
         <div class="table-actions">
-          <button class="action-btn">
-            <span class="material-symbols-outlined">filter_list</span>
-            Filter
-          </button>
-          <button class="action-btn">
-            <span class="material-symbols-outlined">sort</span>
-            Sort
-          </button>
+          <div class="search-wrap">
+            <span class="material-symbols-outlined" style="font-size:18px;color:var(--on-surface-variant);pointer-events:none;">search</span>
+            <input type="text" id="shipmentSearch" placeholder="Search by order / container ID..." class="search-input"/>
+            <button id="searchClear" class="search-clear" style="display:none;">
+              <span class="material-symbols-outlined" style="font-size:16px;">close</span>
+            </button>
+          </div>
+          <div style="position:relative;">
+            <button class="action-btn" id="filterBtn">
+              <span class="material-symbols-outlined">filter_list</span>
+              <span id="filterLabel">Filter</span>
+            </button>
+            <div class="dropdown-menu" id="filterMenu" style="display:none;">
+              <div class="dropdown-section-title">Status</div>
+              <label class="dropdown-item"><input type="radio" name="filterStatus" value=""> All statuses</label>
+              <label class="dropdown-item"><input type="radio" name="filterStatus" value="In Transit"> In Transit</label>
+              <label class="dropdown-item"><input type="radio" name="filterStatus" value="In Port"> In Port</label>
+              <label class="dropdown-item"><input type="radio" name="filterStatus" value="At Anchor"> At Anchor</label>
+              <label class="dropdown-item"><input type="radio" name="filterStatus" value="Arrived"> Arrived</label>
+              <div class="dropdown-divider"></div>
+              <div class="dropdown-section-title">Destination</div>
+              <div id="destFilterList"></div>
+              <div class="dropdown-divider"></div>
+              <button class="dropdown-clear" id="filterClear">Clear filters</button>
+            </div>
+          </div>
+          <div style="position:relative;">
+            <button class="action-btn" id="sortBtn">
+              <span class="material-symbols-outlined">sort</span>
+              <span id="sortLabel">Sort</span>
+            </button>
+            <div class="dropdown-menu" id="sortMenu" style="display:none;">
+              <div class="dropdown-section-title">Sort by</div>
+              <label class="dropdown-item"><input type="radio" name="sortBy" value=""> Default</label>
+              <label class="dropdown-item"><input type="radio" name="sortBy" value="eta_asc"> ETA (earliest first)</label>
+              <label class="dropdown-item"><input type="radio" name="sortBy" value="eta_desc"> ETA (latest first)</label>
+              <label class="dropdown-item"><input type="radio" name="sortBy" value="slip_desc"> Most slipped</label>
+              <label class="dropdown-item"><input type="radio" name="sortBy" value="id_asc"> Order ID (A→Z)</label>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1078,11 +1165,14 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
         <table>
           <thead>
             <tr>
-              <th>Container ID</th>
+              <th>Order / Container ID</th>
               <th>Origin</th>
               <th>Destination</th>
               <th>Vessel</th>
-              <th>Current Status</th>
+              <th>Status</th>
+              <th id="etaColHeader" style="cursor:pointer;user-select:none;" title="Click to sort by ETA">
+                ETA <span id="etaSortIcon" style="font-size:0.7rem;color:var(--on-surface-variant);"></span>
+              </th>
               <th>AIS Update</th>
               <th></th>
             </tr>
@@ -1954,35 +2044,81 @@ function collapseMap() {
 }
 
 // -- TABLE RENDERING ----------------------------------------------------------
+// -- FILTER / SORT STATE -------------------------------------------------------
+let tableSearch   = '';
+let filterStatus  = '';
+let filterDest    = '';
+let sortBy        = '';
+
+function getDisplayEta(s) {
+  // Use booked arrive date + slip as the ETA to sort/display
+  if (s.revisedEta) return s.revisedEta;
+  if (s.arriveDate)  return s.arriveDate;
+  if (s.eta && s.eta !== 'Awaiting live data...') return s.eta;
+  return null;
+}
+
+function etaToMs(s) {
+  const e = getDisplayEta(s);
+  if (!e) return Infinity;
+  const d = new Date(e.replace(/(\d{2}) (\w{3}) (\d{4})/, '$2 $1 $3'));
+  return isNaN(d) ? new Date(e).getTime() : d.getTime();
+}
+
 function renderTable() {
   const tbody = document.getElementById('shipmentTable');
   if (!tbody) return;
-  tbody.innerHTML = shipments.map((s, idx) => {
+
+  // Filter
+  let rows = shipments.map((s, idx) => ({ s, idx })).filter(({ s }) => {
+    if (tableSearch) {
+      const q = tableSearch.toLowerCase();
+      if (!s.id.toLowerCase().includes(q) &&
+          !s.vessel.toLowerCase().includes(q)) return false;
+    }
+    if (filterStatus && s.status !== filterStatus) return false;
+    if (filterDest && s.dest !== filterDest) return false;
+    return true;
+  });
+
+  // Sort
+  if (sortBy === 'eta_asc')   rows.sort((a, b) => etaToMs(a.s) - etaToMs(b.s));
+  if (sortBy === 'eta_desc')  rows.sort((a, b) => etaToMs(b.s) - etaToMs(a.s));
+  if (sortBy === 'slip_desc') rows.sort((a, b) => (b.s.slipDays||0) - (a.s.slipDays||0));
+  if (sortBy === 'id_asc')    rows.sort((a, b) => a.s.id.localeCompare(b.s.id));
+
+  tbody.innerHTML = rows.map(({ s, idx }) => {
     const chipType = navStatusToChip(s.status);
     const iconType = s.status === 'Delayed' ? 'alert' : 'normal';
     const iconName = s.status === 'Delayed' ? 'warning' : 'inventory_2';
-    return `
-    <tr data-id="${idx}" onclick="openDetail(${idx})" style="cursor:pointer;transition:background 0.12s;">
+    const eta      = getDisplayEta(s);
+    const etaDisplay = eta
+      ? (s.revisedEta
+          ? '<span style="font-weight:700;color:var(--on-surface);">' + eta + '</span>' + slipBadgeHtml(s)
+          : '<span style="color:var(--on-surface-variant);">' + eta + '</span>')
+      : '<span style="color:var(--outline-variant);">—</span>';
+    return \`
+    <tr data-id="\${idx}" onclick="openDetail(\${idx})" style="cursor:pointer;transition:background 0.12s;">
       <td style="padding:20px 28px;white-space:nowrap;">
         <div class="container-id-cell">
-          <div class="container-icon ${iconType}">
-            <span class="material-symbols-outlined">${iconName}</span>
+          <div class="container-icon \${iconType}">
+            <span class="material-symbols-outlined">\${iconName}</span>
           </div>
-          <span class="container-id">${s.id}</span>
+          <span class="container-id">\${s.id}</span>
         </div>
       </td>
-      <td style="padding:20px;"><span class="port-text">${s.origin}</span></td>
-      <td style="padding:20px;"><span class="port-text">${s.dest}</span></td>
-      <td style="padding:20px;"><span class="vessel-name">${s.vessel}</span></td>
+      <td style="padding:20px;"><span class="port-text">\${s.origin}</span></td>
+      <td style="padding:20px;"><span class="port-text">\${s.dest}</span></td>
+      <td style="padding:20px;"><span class="vessel-name">\${s.vessel}</span></td>
       <td style="padding:20px;white-space:nowrap;">
-        <span class="chip ${chipType}"><span class="chip-dot"></span>${chipLabel(s.status)}</span>
-        ${slipBadgeHtml(s)}
+        <span class="chip \${chipType}"><span class="chip-dot"></span>\${chipLabel(s.status)}</span>
       </td>
-      <td id="ais-ts-${idx}" style="font-family:'DM Mono',monospace;font-size:0.75rem;font-weight:600;color:var(--on-surface-variant);white-space:nowrap;padding:20px 16px;">${s.lastUpdate || '--'}</td>
+      <td style="padding:20px 16px;white-space:nowrap;font-size:0.8125rem;">\${etaDisplay}</td>
+      <td id="ais-ts-\${idx}" style="font-family:'DM Mono',monospace;font-size:0.75rem;font-weight:600;color:var(--on-surface-variant);white-space:nowrap;padding:20px 16px;">\${s.lastUpdate || '--'}</td>
       <td style="padding:20px 28px;text-align:right;">
         <button class="row-chevron"><span class="material-symbols-outlined">chevron_right</span></button>
       </td>
-    </tr>`;
+    </tr>\`;
   }).join('');
   // Empty state when no shipments
   if (shipments.length === 0) {
@@ -1992,12 +2128,43 @@ function renderTable() {
       + '<div style="font-size:0.875rem;color:var(--on-surface-variant);">Click <strong>New Shipment</strong> to add your first cargo booking.</div>'
       + '</td></tr>';
   }
+  // Empty state
+  if (rows.length === 0) {
+    const msg = shipments.length === 0
+      ? '<div style="font-size:2rem;margin-bottom:12px;">&#9875;</div><div style="font-weight:700;color:var(--on-surface-variant);">No shipments yet</div><div style="font-size:0.875rem;color:var(--on-surface-variant);margin-top:4px;">Click <strong>New Shipment</strong> to add your first cargo booking.</div>'
+      : '<div style="font-size:1.5rem;margin-bottom:12px;">&#128269;</div><div style="font-weight:700;color:var(--on-surface-variant);">No results</div><div style="font-size:0.875rem;color:var(--on-surface-variant);margin-top:4px;">Try adjusting your search or filters.</div>';
+    tbody.innerHTML = '<tr><td colspan="8" style="padding:60px 28px;text-align:center;border:none;">' + msg + '</td></tr>';
+  }
+
+  // Update count
   const info = document.querySelector('.page-info');
   if (info) {
-    info.innerHTML = shipments.length === 0
-      ? 'No shipments'
-      : 'Showing <strong>' + shipments.length + '</strong> shipment' + (shipments.length !== 1 ? 's' : '');
+    if (shipments.length === 0) {
+      info.textContent = 'No shipments';
+    } else if (rows.length < shipments.length) {
+      info.innerHTML = 'Showing <strong>' + rows.length + '</strong> of <strong>' + shipments.length + '</strong> shipments';
+    } else {
+      info.innerHTML = 'Showing <strong>' + shipments.length + '</strong> shipment' + (shipments.length !== 1 ? 's' : '');
+    }
   }
+
+  // Update destination filter list dynamically
+  const destList = document.getElementById('destFilterList');
+  if (destList) {
+    const dests = [...new Set(shipments.map(s => s.dest).filter(Boolean))].sort();
+    destList.innerHTML = dests.map(d =>
+      '<label class="dropdown-item"><input type="radio" name="filterDest" value="' + d + '"' +
+      (filterDest === d ? ' checked' : '') + '> ' + d + '</label>'
+    ).join('');
+    destList.querySelectorAll('input[name="filterDest"]').forEach(el => {
+      el.addEventListener('change', () => {
+        filterDest = el.value;
+        updateFilterLabel();
+        renderTable();
+      });
+    });
+  }
+
   renderAlerts();
 }
 
@@ -2618,6 +2785,98 @@ window.addEventListener('load', () => {
   setInterval(applyDeadReckoning, DR_UPDATE_INTERVAL);
   setTimeout(applyDeadReckoning, 5000); // first pass after 5s
 
+
+  // ── SEARCH ────────────────────────────────────────────────────────────────
+  const searchInput = document.getElementById('shipmentSearch');
+  const searchClear = document.getElementById('searchClear');
+  searchInput.addEventListener('input', () => {
+    tableSearch = searchInput.value.trim();
+    searchClear.style.display = tableSearch ? 'flex' : 'none';
+    renderTable();
+  });
+  searchClear.addEventListener('click', () => {
+    tableSearch = '';
+    searchInput.value = '';
+    searchClear.style.display = 'none';
+    renderTable();
+    searchInput.focus();
+  });
+
+  // ── FILTER DROPDOWN ────────────────────────────────────────────────────────
+  function updateFilterLabel() {
+    const active = filterStatus || filterDest;
+    const btn = document.getElementById('filterBtn');
+    const lbl = document.getElementById('filterLabel');
+    btn.classList.toggle('active', !!active);
+    lbl.textContent = active ? 'Filtered' : 'Filter';
+  }
+
+  document.getElementById('filterBtn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    document.getElementById('sortMenu').style.display = 'none';
+    const menu = document.getElementById('filterMenu');
+    menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+  });
+
+  document.querySelectorAll('input[name="filterStatus"]').forEach(el => {
+    el.addEventListener('change', () => {
+      filterStatus = el.value;
+      updateFilterLabel();
+      renderTable();
+    });
+  });
+
+  document.getElementById('filterClear').addEventListener('click', () => {
+    filterStatus = ''; filterDest = '';
+    document.querySelectorAll('input[name="filterStatus"]').forEach(e => e.checked = e.value === '');
+    document.querySelectorAll('input[name="filterDest"]').forEach(e => e.checked = false);
+    updateFilterLabel();
+    renderTable();
+  });
+
+  // ── SORT DROPDOWN ──────────────────────────────────────────────────────────
+  function updateSortLabel() {
+    const labels = {
+      '': 'Sort', 'eta_asc': 'ETA ↑', 'eta_desc': 'ETA ↓',
+      'slip_desc': 'Most slipped', 'id_asc': 'ID A→Z'
+    };
+    const btn = document.getElementById('sortBtn');
+    const lbl = document.getElementById('sortLabel');
+    btn.classList.toggle('active', !!sortBy);
+    lbl.textContent = labels[sortBy] || 'Sort';
+  }
+
+  document.getElementById('sortBtn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    document.getElementById('filterMenu').style.display = 'none';
+    const menu = document.getElementById('sortMenu');
+    menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+  });
+
+  document.querySelectorAll('input[name="sortBy"]').forEach(el => {
+    el.addEventListener('change', () => {
+      sortBy = el.value;
+      updateSortLabel();
+      renderTable();
+    });
+  });
+
+  // Click ETA column header to toggle sort
+  document.getElementById('etaColHeader').addEventListener('click', () => {
+    sortBy = sortBy === 'eta_asc' ? 'eta_desc' : 'eta_asc';
+    document.querySelectorAll('input[name="sortBy"]').forEach(e => e.checked = e.value === sortBy);
+    document.getElementById('etaSortIcon').textContent = sortBy === 'eta_asc' ? '▲' : '▼';
+    updateSortLabel();
+    renderTable();
+  });
+
+  // Close dropdowns when clicking outside
+  document.addEventListener('click', () => {
+    document.getElementById('filterMenu').style.display = 'none';
+    document.getElementById('sortMenu').style.display = 'none';
+  });
+  document.getElementById('filterMenu').addEventListener('click', e => e.stopPropagation());
+  document.getElementById('sortMenu').addEventListener('click', e => e.stopPropagation());
 
   // Add shipment modal
   document.getElementById('fabBtn').addEventListener('click', openAddModal);
