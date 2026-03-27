@@ -15,6 +15,17 @@ const http = require('http');
 const fs   = require('fs');
 const path = require('path');
 
+// Serve the dashboard HTML so it runs on the Railway domain (fixes CORS)
+function serveDashboard(req, res) {
+  const htmlPath = path.join(__dirname, 'maritime-sentinel.html');
+  if (!fs.existsSync(htmlPath)) {
+    res.writeHead(404); res.end('maritime-sentinel.html not found in deploy'); return;
+  }
+  const html = fs.readFileSync(htmlPath);
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+  res.end(html);
+}
+
 const PROXY_PORT    = process.env.PORT || 8765;
 const AISSTREAM_URL = 'wss://stream.aisstream.io/v0/stream';
 const EVENTS_FILE   = path.join(__dirname, 'voyage-events.json');
@@ -173,6 +184,41 @@ const httpServer = http.createServer((req, res) => {
     return;
   }
 
+  // GET /vessel/:mmsi — fetch vessel position via allorigins CORS proxy
+  // allorigins.win forwards the request from their server with proper headers
+  if (req.method === 'GET' && req.url.startsWith('/vessel/')) {
+    const mmsi = req.url.split('/vessel/')[1].split('?')[0].trim();
+    if (!mmsi || !/^\d+$/.test(mmsi)) {
+      res.writeHead(400); res.end('Invalid MMSI'); return;
+    }
+    const target = encodeURIComponent(`https://www.vesselfinder.com/api/pub/click/${mmsi}`);
+    const proxyUrl = `https://api.allorigins.win/get?url=${target}`;
+    const proxyReq = https.request(proxyUrl, { timeout: 10000,
+      headers: { 'User-Agent': 'maritime-sentinel/1.0' }
+    }, (proxyRes) => {
+      let data = '';
+      proxyRes.on('data', c => data += c);
+      proxyRes.on('end', () => {
+        try {
+          // allorigins wraps response in { contents: "..." }
+          const wrapper = JSON.parse(data);
+          const inner   = JSON.parse(wrapper.contents);
+          res.writeHead(200, {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          });
+          res.end(JSON.stringify(inner));
+        } catch(e) {
+          res.writeHead(502); res.end('Bad upstream response');
+        }
+      });
+    });
+    proxyReq.on('error', () => { res.writeHead(502); res.end('Upstream error'); });
+    proxyReq.on('timeout', () => { proxyReq.destroy(); res.writeHead(504); res.end('Timeout'); });
+    proxyReq.end();
+    return;
+  }
+
   if (req.method === 'GET' && req.url === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
@@ -206,6 +252,11 @@ const httpServer = http.createServer((req, res) => {
       }
     });
     return;
+  }
+
+  // Serve dashboard at root
+  if (req.method === 'GET' && (req.url === '/' || req.url === '/index.html')) {
+    serveDashboard(req, res); return;
   }
 
   res.writeHead(404); res.end('Not found');
