@@ -1754,45 +1754,88 @@ function makeShipment(overrides) {
 }
 
 // Load saved bookings from localStorage, fall back to demo data
-function loadShipments() {
+// ── SUPABASE ─────────────────────────────────────────────────────────────────
+const SB_URL = 'https://nkxvacdhwimhemnmcpxe.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5reHZhY2Rod2ltaGVtbm1jcHhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2MjQxMTgsImV4cCI6MjA5MDIwMDExOH0.hc1kttUnPXg62yeo6xrRSXcily05zLA-Qo6AtDbYEhE';
+
+async function sbFetch(method, table, body, params) {
+  const url = SB_URL + '/rest/v1/' + table + (params ? '?' + params : '');
   try {
-    const saved = localStorage.getItem('ms_shipments');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      // Sanitise fields that may be missing from older saved data
-      return parsed.map(s => makeShipment(s));
-    }
-  } catch(e) {}
-  return [];
+    const res = await fetch(url, {
+      method,
+      headers: {
+        'apikey':        SB_KEY,
+        'Authorization': 'Bearer ' + SB_KEY,
+        'Content-Type':  'application/json',
+        'Prefer':        method === 'POST' ? 'resolution=merge-duplicates,return=minimal' : 'return=minimal',
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (res.status === 204 || res.status === 201) return [];
+    return res.ok ? await res.json() : null;
+  } catch(e) { return null; }
 }
 
-function saveShipments() {
-  try {
-    // Save booking fields AND last-known AIS state so the table
-    // renders correctly on reload before new updates arrive
-    const toSave = shipments.map(s => ({
-      // Booking fields
+function shipmentToRow(s) {
+  return {
+    id: s.id,
+    data: {
       id: s.id, vessel: s.vessel, mmsi: s.mmsi,
-      origin: s.origin, dest: s.dest,
+      origin: s.origin, dest: s.dest, mode: s.mode || 'sea',
       loadDate: s.loadDate, arriveDate: s.arriveDate,
       cargo: s.cargo, weight: s.weight, timeline: s.timeline,
-      // Last-known AIS state (restored on reload)
-      status: s.status,
-      lat: s.lat, lng: s.lng,
+      status: s.status, lat: s.lat, lng: s.lng,
       speed: s.speed, course: s.course,
-      destination: s.destination,
-      eta: s.eta,
-      lastUpdate: s.lastUpdate ? s.lastUpdate + ' (prev)' : null,
+      destination: s.destination, eta: s.eta,
+      lastUpdate: s.lastUpdate
+        ? (s.lastUpdate.endsWith('(prev)') ? s.lastUpdate : s.lastUpdate + ' (prev)')
+        : null,
       lastUpdateTs: s.lastUpdateTs || null,
-      // Slip tracking state
       slipDays: s.slipDays || 0,
       firstEtas: s.firstEtas || {},
       lastEtaByDest: s.lastEtaByDest || {},
       frozenSlipMs: s.frozenSlipMs || 0,
       revisedEta: s.revisedEta || null,
-    }));
-    localStorage.setItem('ms_shipments', JSON.stringify(toSave));
+      completedAt: s.completedAt || null,
+    },
+  };
+}
+
+async function saveShipments() {
+  try {
+    const rows = shipments.map(shipmentToRow);
+    await sbFetch('POST', 'shipments', rows, 'on_conflict=id');
+    // Local cache for fast startup
+    localStorage.setItem('ms_shipments_cache', JSON.stringify(rows.map(r => r.data)));
+  } catch(e) { console.log('[sb] save error:', e.message); }
+}
+
+async function deleteShipmentRemote(id) {
+  await sbFetch('DELETE', 'shipments', null, 'id=eq.' + encodeURIComponent(id));
+}
+
+// Bootstrap from localStorage cache first (instant), then sync from Supabase
+function loadShipments() {
+  try {
+    const cached = localStorage.getItem('ms_shipments_cache')
+      || localStorage.getItem('ms_shipments'); // migrate old key
+    if (cached) return JSON.parse(cached).map(s => makeShipment(s));
   } catch(e) {}
+  return [];
+}
+
+async function syncShipmentsFromSupabase() {
+  try {
+    const rows = await sbFetch('GET', 'shipments', null, 'select=id,data&order=data->>id.asc');
+    if (!rows || !Array.isArray(rows) || rows.length === 0) return;
+    shipments = rows.map(r => makeShipment(r.data));
+    localStorage.setItem('ms_shipments_cache', JSON.stringify(rows.map(r => r.data)));
+    VESSEL_REGISTRY = buildRegistry();
+    TRACKED_MMSIS   = Object.keys(VESSEL_REGISTRY);
+    renderTable();
+    renderAlerts();
+    console.log('[sb] Synced ' + shipments.length + ' shipments from Supabase');
+  } catch(e) { console.log('[sb] sync error:', e.message); }
 }
 
 let shipments = loadShipments();
@@ -2965,6 +3008,7 @@ function confirmRemove() {
   }
 
   // Remove from array and re-index markers object
+  const removedId = shipments[idx].id;
   shipments.splice(idx, 1);
   // Re-key markers for shifted indices
   const newMarkers = {};
@@ -2976,6 +3020,7 @@ function confirmRemove() {
   Object.keys(vesselMarkers).forEach(k => delete vesselMarkers[k]);
   Object.assign(vesselMarkers, newMarkers);
 
+  deleteShipmentRemote(removedId);
   saveShipments();
   VESSEL_REGISTRY = buildRegistry();
   TRACKED_MMSIS   = Object.keys(VESSEL_REGISTRY);
@@ -3453,8 +3498,9 @@ window.addEventListener('load', () => {
     btn.classList.toggle('active-perpage', parseInt(btn.dataset.val) === shipmentsPerPage);
   });
 
-  // Render table from JS data
+  // Render immediately from local cache, then sync fresh data from Supabase
   renderTable();
+  syncShipmentsFromSupabase();
 
   // Fetch voyage event history from proxy on load
   fetchVoyageEvents();

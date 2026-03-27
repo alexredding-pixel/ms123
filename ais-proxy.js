@@ -11,9 +11,41 @@
  */
 
 const { WebSocket, WebSocketServer } = require('ws');
-const http = require('http');
-const fs   = require('fs');
-const path = require('path');
+const http  = require('http');
+const https = require('https');
+const fs    = require('fs');
+const path  = require('path');
+
+// ── SUPABASE CLIENT (lightweight — no SDK needed) ─────────────────────────────
+const SUPABASE_URL = 'https://nkxvacdhwimhemnmcpxe.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5reHZhY2Rod2ltaGVtbm1jcHhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2MjQxMTgsImV4cCI6MjA5MDIwMDExOH0.hc1kttUnPXg62yeo6xrRSXcily05zLA-Qo6AtDbYEhE';
+
+function supabase(method, table, body, params) {
+  return new Promise((resolve) => {
+    let url = SUPABASE_URL + '/rest/v1/' + table;
+    if (params) url += '?' + params;
+    const bodyStr = body ? JSON.stringify(body) : null;
+    const req = https.request(url, {
+      method,
+      headers: {
+        'apikey':        SUPABASE_KEY,
+        'Authorization': 'Bearer ' + SUPABASE_KEY,
+        'Content-Type':  'application/json',
+        'Prefer':        method === 'POST' ? 'resolution=merge-duplicates' : '',
+      },
+    }, (res) => {
+      let data = '';
+      res.on('data', c => data += c);
+      res.on('end', () => {
+        try { resolve({ ok: res.statusCode < 300, data: data ? JSON.parse(data) : null, status: res.statusCode }); }
+        catch(e) { resolve({ ok: false, data: null }); }
+      });
+    });
+    req.on('error', () => resolve({ ok: false, data: null }));
+    if (bodyStr) req.write(bodyStr);
+    req.end();
+  });
+}
 
 // Serve the dashboard HTML so it runs on the Railway domain (fixes CORS)
 function serveDashboard(req, res) {
@@ -28,7 +60,6 @@ function serveDashboard(req, res) {
 
 const PROXY_PORT    = process.env.PORT || 8765;
 const AISSTREAM_URL = 'wss://stream.aisstream.io/v0/stream';
-const EVENTS_FILE   = path.join(__dirname, 'voyage-events.json');
 const CONFIG_FILE   = path.join(__dirname, 'proxy-config.json');
 
 let aisSocket      = null;
@@ -42,45 +73,51 @@ const lastDest     = {};
 const lastAisMessage = {};
 
 // ── EVENT LOG ─────────────────────────────────────────────────────────────────
-// Last-known position store — one entry per MMSI, overwritten each time
-const POSITIONS_FILE = path.join(__dirname, 'vessel-positions.json');
-
-function loadPositions() {
-  try {
-    if (fs.existsSync(POSITIONS_FILE)) return JSON.parse(fs.readFileSync(POSITIONS_FILE, 'utf8'));
-  } catch(e) {}
-  return {};
-}
-
-function logPosition(pos) {
-  try {
-    const positions = loadPositions();
-    positions[pos.mmsi] = pos; // overwrite with latest
-    fs.writeFileSync(POSITIONS_FILE, JSON.stringify(positions, null, 2));
-  } catch(e) {}
-}
-
-function loadEvents() {
-  try {
-    if (fs.existsSync(EVENTS_FILE)) return JSON.parse(fs.readFileSync(EVENTS_FILE, 'utf8'));
-  } catch (e) {}
-  return [];
-}
-
-function logEvent(evt) {
-  const events = loadEvents();
-  const tenMinsAgo = Date.now() - 600000;
-  // Allow ETA updates through even for same destination (but not within 10 mins)
-  const dup = events.some(e =>
-    e.mmsi === evt.mmsi && e.destination === evt.destination &&
-    e.eta === evt.eta &&
-    new Date(e.timestamp).getTime() > tenMinsAgo
+// Last-known position store — Supabase (survives redeploys, syncs across devices)
+async function logPosition(pos) {
+  await supabase('POST', 'vessel_positions',
+    { mmsi: pos.mmsi, data: pos, updated_at: new Date().toISOString() },
+    'on_conflict=mmsi'
   );
-  if (dup) return;
-  events.push(evt);
-  if (events.length > 1000) events.splice(0, events.length - 1000);
-  try { fs.writeFileSync(EVENTS_FILE, JSON.stringify(events, null, 2)); } catch (e) {}
-  console.log(`[events] ${evt.mmsi} -> ${evt.destination} ETA:${evt.eta || '?'}`);
+}
+
+async function loadPositions() {
+  const res = await supabase('GET', 'vessel_positions', null, 'select=mmsi,data');
+  if (!res.ok || !Array.isArray(res.data)) return {};
+  const out = {};
+  res.data.forEach(row => { out[row.mmsi] = row.data; });
+  return out;
+}
+
+async function loadEvents() {
+  const res = await supabase('GET', 'voyage_events', null,
+    'select=mmsi,destination,eta,lat,lng,dest_changed,timestamp&order=timestamp.asc&limit=1000'
+  );
+  return (res.ok && Array.isArray(res.data)) ? res.data : [];
+}
+
+async function logEvent(evt) {
+  // Dedup: skip if same mmsi+dest+eta logged in last 10 minutes
+  const tenMinsAgo = new Date(Date.now() - 600000).toISOString();
+  const check = await supabase('GET', 'voyage_events', null,
+    'mmsi=eq.' + evt.mmsi +
+    '&destination=eq.' + encodeURIComponent(evt.destination) +
+    '&eta=eq.' + encodeURIComponent(evt.eta || '') +
+    '&timestamp=gte.' + tenMinsAgo +
+    '&limit=1'
+  );
+  if (check.ok && check.data && check.data.length > 0) return;
+
+  await supabase('POST', 'voyage_events', {
+    mmsi:         evt.mmsi,
+    destination:  evt.destination,
+    eta:          evt.eta || null,
+    lat:          evt.lat  || null,
+    lng:          evt.lng  || null,
+    dest_changed: evt.destChanged !== false,
+    timestamp:    evt.timestamp || new Date().toISOString(),
+  });
+  console.log('[events] ' + evt.mmsi + ' -> ' + evt.destination + ' ETA:' + (evt.eta || '?'));
 }
 
 // ── CONFIG ────────────────────────────────────────────────────────────────────
@@ -102,7 +139,7 @@ function saveConfig() {
 }
 
 // ── AIS MESSAGE INSPECTION ────────────────────────────────────────────────────
-function inspectMessage(raw) {
+async function inspectMessage(raw) {
   try {
     const msg  = JSON.parse(raw);
     const meta = msg.MetaData || {};
@@ -120,7 +157,7 @@ function inspectMessage(raw) {
       const cog = pr.Cog  ?? null;
       const nav = pr.NavigationalStatus ?? null;
       if (lat && lng) {
-        logPosition({ mmsi, lat, lng, sog, cog, navStatus: nav,
+        await logPosition({ mmsi, lat, lng, sog, cog, navStatus: nav,
                       timestamp: new Date().toISOString() });
       }
       return;
@@ -148,7 +185,7 @@ function inspectMessage(raw) {
       lastDest[mmsi] = dest;
       if (etaStr) lastDest[mmsi + '_eta'] = etaStr;
 
-      logEvent({
+      await logEvent({
         mmsi, destination: dest, eta: etaStr,
         lat: meta.latitude ?? null, lng: meta.longitude ?? null,
         timestamp: new Date().toISOString(),
@@ -192,7 +229,7 @@ function connectToAIS() {
       const mmsi = String(m?.MetaData?.MMSI_String || m?.MetaData?.MMSI || '');
       if (mmsi) lastAisMessage[mmsi] = Date.now();
     } catch(e) {}
-    inspectMessage(raw);
+    inspectMessage(raw); // async — fire and forget
     wss.clients.forEach(c => { if (c.readyState === WebSocket.OPEN) c.send(raw); });
   });
 
@@ -213,14 +250,18 @@ const httpServer = http.createServer((req, res) => {
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
   if (req.method === 'GET' && req.url === '/events') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(loadEvents()));
+    loadEvents().then(events => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(events));
+    }).catch(() => { res.writeHead(500); res.end('[]'); });
     return;
   }
 
   if (req.method === 'GET' && req.url === '/positions') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(loadPositions()));
+    loadPositions().then(positions => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(positions));
+    }).catch(() => { res.writeHead(500); res.end('{}'); });
     return;
   }
 
@@ -267,7 +308,6 @@ const httpServer = http.createServer((req, res) => {
       browsers: connectedCount,
       vessels: trackedMmsis.length,
       mmsis: trackedMmsis,
-      events: loadEvents().length,
       uptime: Math.round(process.uptime()) + 's',
     }));
     return;
