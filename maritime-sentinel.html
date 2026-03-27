@@ -2096,38 +2096,26 @@ function renderTable() {
       ? (s.revisedEta
           ? '<span style="font-weight:700;color:var(--on-surface);">' + eta + '</span>' + slipBadgeHtml(s)
           : '<span style="color:var(--on-surface-variant);">' + eta + '</span>')
-      : '<span style="color:var(--outline-variant);">—</span>';
-    return \`
-    <tr data-id="\${idx}" onclick="openDetail(\${idx})" style="cursor:pointer;transition:background 0.12s;">
-      <td style="padding:20px 28px;white-space:nowrap;">
-        <div class="container-id-cell">
-          <div class="container-icon \${iconType}">
-            <span class="material-symbols-outlined">\${iconName}</span>
-          </div>
-          <span class="container-id">\${s.id}</span>
-        </div>
-      </td>
-      <td style="padding:20px;"><span class="port-text">\${s.origin}</span></td>
-      <td style="padding:20px;"><span class="port-text">\${s.dest}</span></td>
-      <td style="padding:20px;"><span class="vessel-name">\${s.vessel}</span></td>
-      <td style="padding:20px;white-space:nowrap;">
-        <span class="chip \${chipType}"><span class="chip-dot"></span>\${chipLabel(s.status)}</span>
-      </td>
-      <td style="padding:20px 16px;white-space:nowrap;font-size:0.8125rem;">\${etaDisplay}</td>
-      <td id="ais-ts-\${idx}" style="font-family:'DM Mono',monospace;font-size:0.75rem;font-weight:600;color:var(--on-surface-variant);white-space:nowrap;padding:20px 16px;">\${s.lastUpdate || '--'}</td>
-      <td style="padding:20px 28px;text-align:right;">
-        <button class="row-chevron"><span class="material-symbols-outlined">chevron_right</span></button>
-      </td>
-    </tr>\`;
-  }).join('');
-  // Empty state when no shipments
-  if (shipments.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="7" style="padding:60px 28px;text-align:center;border:none;">'
-      + '<div style="font-size:2rem;margin-bottom:12px;">&#9875;</div>'
-      + '<div style="font-size:1rem;font-weight:700;color:var(--on-surface-variant);margin-bottom:6px;">No shipments yet</div>'
-      + '<div style="font-size:0.875rem;color:var(--on-surface-variant);">Click <strong>New Shipment</strong> to add your first cargo booking.</div>'
+      : '<span style="color:var(--outline-variant);">&#8212;</span>';
+    return '<tr data-id="' + idx + '" onclick="openDetail(' + idx + ')" style="cursor:pointer;transition:background 0.12s;">'
+      + '<td style="padding:20px 28px;white-space:nowrap;">'
+      + '<div class="container-id-cell">'
+      + '<div class="container-icon ' + iconType + '"><span class="material-symbols-outlined">' + iconName + '</span></div>'
+      + '<span class="container-id">' + s.id + '</span>'
+      + '</div></td>'
+      + '<td style="padding:20px;"><span class="port-text">' + s.origin + '</span></td>'
+      + '<td style="padding:20px;"><span class="port-text">' + s.dest + '</span></td>'
+      + '<td style="padding:20px;"><span class="vessel-name">' + s.vessel + '</span></td>'
+      + '<td style="padding:20px;white-space:nowrap;">'
+      + '<span class="chip ' + chipType + '"><span class="chip-dot"></span>' + chipLabel(s.status) + '</span>'
+      + '</td>'
+      + '<td style="padding:20px 16px;white-space:nowrap;font-size:0.8125rem;">' + etaDisplay + '</td>'
+      + '<td id="ais-ts-' + idx + '" style="font-family:'DM Mono',monospace;font-size:0.75rem;font-weight:600;color:var(--on-surface-variant);white-space:nowrap;padding:20px 16px;">' + (s.lastUpdate || '--') + '</td>'
+      + '<td style="padding:20px 28px;text-align:right;">'
+      + '<button class="row-chevron"><span class="material-symbols-outlined">chevron_right</span></button>'
       + '</td></tr>';
-  }
+  }).join('');
+
   // Empty state
   if (rows.length === 0) {
     const msg = shipments.length === 0
