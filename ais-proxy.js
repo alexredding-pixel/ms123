@@ -268,27 +268,28 @@ function fetchVesselFinder(mmsi) {
       timeout: 8000,
     }, (res) => {
       let data = '';
-      console.log(`[fallback] HTTP ${res.statusCode} for ${mmsi}`);
       res.on('data', c => data += c);
       res.on('end', () => {
         try {
-          // Log raw response for debugging (first 300 chars)
-          console.log(`[fallback] raw response for ${mmsi}: ${data.slice(0, 300)}`);
           const j = JSON.parse(data);
-          if (Array.isArray(j) && j.length >= 6) {
-            resolve({ name: j[0]||'', lat: parseFloat(j[2])||null, lng: parseFloat(j[3])||null,
-                      cog: parseFloat(j[4])||null, sog: parseFloat(j[5])||null,
-                      dest: (j[12]||'').trim(), navStatus: parseInt(j[11])||0 });
-          } else if (j && j.lat != null) {
-            resolve({ name: j.name||'', lat: parseFloat(j.lat)||null, lng: parseFloat(j.lng)||null,
-                      cog: parseFloat(j.cog)||null, sog: parseFloat(j.sog)||null,
-                      dest: (j.destination||'').trim(), navStatus: parseInt(j.navigationStatus)||0 });
+          // VesselFinder format: { ss=speed, cu=course, y=lat, x=lng, dest, .ns=navStatus, name }
+          // Field names confirmed from live response
+          const lat = parseFloat(j.y) || null;
+          const lng = parseFloat(j.x) || null;
+          const sog = parseFloat(j.ss) || null;
+          const cog = parseFloat(j.cu) || null;
+          const name = (j.name || '').trim();
+          const dest = (j.dest || '').trim();
+          const navStatus = parseInt(j['.ns']) || 0;
+
+          if (lat && lng) {
+            resolve({ name, lat, lng, cog, sog, dest, navStatus });
           } else {
-            console.log(`[fallback] unrecognised format for ${mmsi}:`, JSON.stringify(j).slice(0, 200));
+            console.log(`[fallback] no position for ${mmsi} — dest:${dest} name:${name}`);
             resolve(null);
           }
         } catch(e) {
-          console.log(`[fallback] parse error for ${mmsi}: ${e.message} — raw: ${data.slice(0,200)}`);
+          console.log(`[fallback] parse error for ${mmsi}: ${e.message}`);
           resolve(null);
         }
       });
@@ -308,7 +309,8 @@ async function runFallbackPoller() {
     const d = await fetchVesselFinder(mmsi);
     if (!d || !d.lat) { console.log(`[fallback] ${mmsi} — no data`); continue; }
     console.log(`[fallback] ${mmsi} — ${d.lat.toFixed(3)},${d.lng.toFixed(3)} sog:${d.sog}`);
-    const msg = JSON.stringify({
+    // Send PositionReport with location data
+    const posMsg = JSON.stringify({
       MessageType: 'PositionReport',
       _source: 'vesselfinder-fallback',
       MetaData: { MMSI: parseInt(mmsi), MMSI_String: mmsi,
@@ -318,8 +320,22 @@ async function runFallbackPoller() {
         Sog: d.sog, NavigationalStatus: d.navStatus,
       }},
     });
+    // Also send ShipStaticData if we have destination
+    const staticMsg = d.dest ? JSON.stringify({
+      MessageType: 'ShipStaticData',
+      _source: 'vesselfinder-fallback',
+      MetaData: { MMSI: parseInt(mmsi), MMSI_String: mmsi,
+                  ShipName: d.name, latitude: d.lat, longitude: d.lng },
+      Message: { ShipStaticData: { Destination: d.dest, Name: d.name } },
+    }) : null;
     let sent = 0;
-    wss.clients.forEach(c => { if (c.readyState === 1) { c.send(msg); sent++; } });
+    wss.clients.forEach(c => {
+      if (c.readyState === 1) {
+        c.send(posMsg);
+        if (staticMsg) c.send(staticMsg);
+        sent++;
+      }
+    });
     lastAisMessage[mmsi] = Date.now();
     console.log(`[fallback] ${mmsi} — forwarded to ${sent} browser(s)`);
   }
