@@ -271,6 +271,7 @@ function fetchVesselFinder(mmsi) {
       res.on('data', c => data += c);
       res.on('end', () => {
         try {
+          console.log(`[fallback] raw(${mmsi}): ${data.slice(0,400)}`);
           const j = JSON.parse(data);
           // VesselFinder format: { ss=speed, cu=course, y=lat, x=lng, dest, .ns=navStatus, name }
           // Field names confirmed from live response
