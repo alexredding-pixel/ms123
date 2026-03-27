@@ -205,18 +205,34 @@ wss.on('connection', browserSocket => {
   if (!aisSocket || aisSocket.readyState !== WebSocket.OPEN) connectToAIS();
 
   browserSocket.on('message', data => {
-    // Sniff the subscription message for API key and MMSIs so proxy stays in sync
+    // Extract API key and MMSIs from the browser's subscription message.
+    // The PROXY manages the aisstream subscription directly — we do NOT
+    // forward the browser's subscription to aisstream, because the proxy's
+    // persistent connection is the authoritative subscriber.
+    // This prevents the browser sending a stale/incomplete MMSI list that
+    // overwrites the proxy's up-to-date subscription.
     try {
       const sub = JSON.parse(data.toString());
       if (sub.APIKey) {
-        const changed = apiKey !== sub.APIKey ||
-          JSON.stringify(trackedMmsis.sort()) !== JSON.stringify((sub.FiltersShipMMSI||[]).sort());
-        apiKey = sub.APIKey;
-        trackedMmsis = sub.FiltersShipMMSI || trackedMmsis;
-        if (changed) saveConfig();
+        const newKey  = sub.APIKey !== apiKey;
+        const newMmsis = JSON.stringify((sub.FiltersShipMMSI||[]).slice().sort()) !==
+                         JSON.stringify(trackedMmsis.slice().sort());
+        if (newKey)  apiKey = sub.APIKey;
+        // Only adopt browser MMSIs if proxy has none yet
+        if (trackedMmsis.length === 0 && sub.FiltersShipMMSI?.length) {
+          trackedMmsis = sub.FiltersShipMMSI;
+        }
+        if (newKey || (trackedMmsis.length === 0)) {
+          saveConfig();
+          // If this is first connection, start AIS now
+          if (!aisSocket || aisSocket.readyState !== WebSocket.OPEN) {
+            connectToAIS();
+          }
+        }
       }
     } catch (e) {}
-    if (aisSocket?.readyState === WebSocket.OPEN) aisSocket.send(data.toString());
+    // Do NOT forward subscription to aisstream — proxy manages that directly.
+    // Forward any other message types (none expected currently).
   });
 
   browserSocket.on('close', () => {
