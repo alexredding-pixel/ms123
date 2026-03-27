@@ -2078,24 +2078,22 @@ async function browserFallbackPoller() {
     if (silent < BROWSER_FALLBACK_SILENT) continue;
 
     try {
-      // Fetch directly from VesselFinder — works from browser, blocked from server
-      const res = await fetch('https://www.vesselfinder.com/api/pub/click/' + s.mmsi, {
-        headers: {
-          'Accept': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest',
-          'Referer': 'https://www.vesselfinder.com/',
-        }
-      });
+      // VesselFinder blocks CORS from all browser origins.
+      // Route through corsproxy.io which fetches server-side and adds CORS headers.
+      const target = encodeURIComponent('https://www.vesselfinder.com/api/pub/click/' + s.mmsi);
+      const res = await fetch('https://corsproxy.io/?' + target);
       if (!res.ok) continue;
       const j = await res.json();
 
       const lat = parseFloat(j.y ?? j.lat) || null;
       const lng = parseFloat(j.x ?? j.lng) || null;
-      if (!lat || !lng) continue;
+      if (!lat || !lng) {
+        console.log('[browser-fallback] no coords for ' + s.mmsi + ' keys:' + Object.keys(j).join(','));
+        continue;
+      }
 
-      console.log('[browser-fallback] ' + s.mmsi + ' (' + s.vessel + '): ' + lat.toFixed(3) + ',' + lng.toFixed(3));
+      console.log('[browser-fallback] ' + s.mmsi + ' (' + s.vessel + '): ' + lat.toFixed(3) + ',' + lng.toFixed(3) + ' sog:' + (j.ss ?? j.sog));
 
-      // Push result to proxy — it broadcasts to all browsers as synthetic AIS
       ws.send(JSON.stringify({
         _type: 'fallback_position',
         mmsi:   s.mmsi,
@@ -2107,7 +2105,7 @@ async function browserFallbackPoller() {
         navStatus: parseInt(j['.ns'] ?? 0) || 0,
       }));
     } catch(e) {
-      // CORS or network error — skip silently
+      console.log('[browser-fallback] error for ' + s.mmsi + ': ' + e.message);
     }
   }
 }
