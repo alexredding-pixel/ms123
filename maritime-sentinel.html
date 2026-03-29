@@ -1711,7 +1711,7 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
         <div class="form-row">
           <div class="form-group">
             <label>Vessel Name</label>
-            <input type="text" id="f-vessel-name" placeholder="Type to search vessels..."/>
+            <input type="text" id="f-vessel-name" placeholder="Type to search vessels..." autocomplete="off" autocorrect="off" spellcheck="false"/>
           </div>
           <div class="form-group">
             <label>MMSI <span style="font-weight:400;font-size:0.6875rem;color:var(--outline);">(&thinsp;<a href="https://www.vesselfinder.com" target="_blank" style="color:var(--primary);">look up on VesselFinder</a>&thinsp;)</span></label>
@@ -2056,10 +2056,37 @@ let TRACKED_MMSIS = [];
 // -- VESSEL REGISTRY (AIS tracking) ------------------------------------------
 // Separate from user bookings - vessels are tracked regardless of bookings
 const KNOWN_VESSELS = {
-  '353136000': { name: 'EVER GIVEN',       flag: 'Panama',      imo: '9811000' },
-  '219018271': { name: 'MAERSK MC-KINNEY', flag: 'Denmark',     imo: '9619907' },
-  '440326000': { name: 'HMM ALGECIRAS',    flag: 'South Korea', imo: '9863297' },
-  '372003000': { name: 'MSC GULSUN',       flag: 'Panama',      imo: '9839430' },
+  // MSC
+  '255805930': { name: 'MSC CLEA',          flag: 'Portugal',    imo: '9767922' },
+  '255870000': { name: 'MSC OSCAR',          flag: 'Portugal',    imo: '9703291' },
+  '372003000': { name: 'MSC GULSUN',         flag: 'Panama',      imo: '9839430' },
+  '338224000': { name: 'MSC IRINA',          flag: 'USA',         imo: '9930425' },
+  // Maersk
+  '219018271': { name: 'MAERSK MC-KINNEY',   flag: 'Denmark',     imo: '9619907' },
+  '219465000': { name: 'MAERSK ESSEX',       flag: 'Denmark',     imo: '9778788' },
+  '219650000': { name: 'MAERSK EINDHOVEN',   flag: 'Denmark',     imo: '9778790' },
+  // Evergreen
+  '563229400': { name: 'EVER MEGA',          flag: 'Singapore',   imo: '9904059' },
+  '353136000': { name: 'EVER GIVEN',         flag: 'Panama',      imo: '9811000' },
+  '566500000': { name: 'EVER ACE',           flag: 'Singapore',   imo: '9893408' },
+  // HMM
+  '440326000': { name: 'HMM ALGECIRAS',      flag: 'South Korea', imo: '9863297' },
+  '440312000': { name: 'HMM COPENHAGEN',     flag: 'South Korea', imo: '9863302' },
+  // CMA CGM
+  '228367000': { name: 'CMA CGM LOUIS BLANC',flag: 'France',      imo: '9775978' },
+  '228420000': { name: 'CMA CGM ANTOINE DE SAINT EXUPERY', flag: 'France', imo: '9776171' },
+  // COSCO
+  '477336100': { name: 'COSCO SHIPPING UNIVERSE', flag: 'Hong Kong', imo: '9785463' },
+  '477623600': { name: 'COSCO SHIPPING TAURUS',   flag: 'Hong Kong', imo: '9757187' },
+  // Hapag-Lloyd
+  '218545000': { name: 'BERLIN EXPRESS',     flag: 'Germany',     imo: '9815478' },
+  '218442000': { name: 'HAMBURG EXPRESS',    flag: 'Germany',     imo: '9815492' },
+  // ONE
+  '477548900': { name: 'ONE INNOVATION',     flag: 'Hong Kong',   imo: '9806081' },
+  '477549100': { name: 'ONE INSPIRATION',    flag: 'Hong Kong',   imo: '9806093' },
+  // ZIM
+  '212516000': { name: 'ZIM MOUNTING LION',  flag: 'Cyprus',      imo: '9930360' },
+  '636093175': { name: 'ZIM LUANDA',         flag: 'Liberia',     imo: '9784300' },
 };
 
 // -- SHIPMENTS (user cargo bookings) ------------------------------------------
