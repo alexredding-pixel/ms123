@@ -1869,6 +1869,17 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
 
       </div>
 
+      <div class="form-divider"></div>
+
+      <!-- Documents -->
+      <div class="form-section">
+        <div class="form-section-title">Documents</div>
+        <div id="modalDocsList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:6px;"></div>
+        <div id="modalDocBtns" style="display:flex;flex-direction:column;gap:6px;"></div>
+        <input type="file" id="modalDocFileInput" accept=".pdf" style="display:none;"/>
+        <p style="font-size:0.75rem;color:var(--outline);margin-top:8px;">PDF only · max 5MB per file</p>
+      </div>
+
       </div><!-- /entryManual -->
 
       <!-- AUTO ENTRY CONTENT -->
@@ -2798,6 +2809,7 @@ function openDetail(idx) {
   `).join('');
 
   document.getElementById('detailPanel').classList.add('open');
+  renderDocSection(s);
 }
 
 function closeDetail() {
@@ -3175,6 +3187,8 @@ function openAddModal() {
   document.getElementById('addShipmentModal').classList.add('open');
   switchEntryTab('manual');
   clearBlFile();
+  pendingModalDocs = {};
+  renderModalDocs(null);
   // Auto-generate a reference number
   const ref = 'MS-' + Math.floor(10000 + Math.random() * 90000) + '-' +
     String.fromCharCode(65 + Math.floor(Math.random() * 26)) +
@@ -3298,6 +3312,14 @@ function submitAddShipment() {
 
   shipments.push(newShipment);
   saveShipments();
+  // Upload any pending documents
+  if (Object.keys(pendingModalDocs).length > 0) {
+    const sid = newShipment.id;
+    Promise.all(Object.entries(pendingModalDocs).map(([docType, doc]) =>
+      uploadDoc(sid, docType, doc.name, doc.base64, doc.size)
+    )).catch(e => console.log('[docs] Upload error:', e));
+    pendingModalDocs = {};
+  }
   VESSEL_REGISTRY = buildRegistry();
   TRACKED_MMSIS   = Object.keys(VESSEL_REGISTRY);
   if (wsApiKey) {
@@ -4428,6 +4450,89 @@ async function removeDoc(docType, shipmentId, s) {
   renderDocSection(s || shipments[activeId]);
 }
 
+// -- MODAL DOCUMENT HANDLING -------------------------------------------------
+let pendingModalDocs = {}; // { bl: {file, base64, name, size}, ... } — held until shipment saved
+
+function renderModalDocs(shipmentId) {
+  const list = document.getElementById('modalDocsList');
+  const btns = document.getElementById('modalDocBtns');
+  if (!list || !btns) return;
+  const docTypes = ['bl', 'invoice', 'packing'];
+
+  // In edit mode, fetch real docs from Supabase
+  if (shipmentId) {
+    list.innerHTML = '<div style="font-size:0.8125rem;color:var(--outline);">Loading…</div>';
+    btns.innerHTML = '';
+    fetchDocs(shipmentId).then(rows => {
+      const uploaded = {};
+      rows.forEach(r => { uploaded[r.doc_type] = r; });
+      // Merge with any pending in-memory uploads
+      Object.keys(pendingModalDocs).forEach(t => { uploaded[t] = { filename: pendingModalDocs[t].name, _pending: true }; });
+      list.innerHTML = docTypes.filter(t => uploaded[t]).map(t => {
+        const d = uploaded[t];
+        return '<div class="doc-row" data-doctype="' + t + '">'
+          + '<span class="material-symbols-outlined">picture_as_pdf</span>'
+          + '<div style="flex:1;min-width:0;">'
+          + '<div class="doc-name">' + d.filename + (d._pending ? ' <span style="font-size:0.625rem;color:var(--secondary);font-weight:700;">PENDING</span>' : '') + '</div>'
+          + '<div class="doc-type">' + DOC_LABELS[t] + '</div>'
+          + '</div>'
+          + '<button class="doc-action" data-action="remove-modal" data-doctype="' + t + '" title="Remove">'
+          + '<span class="material-symbols-outlined" style="font-size:18px;">delete_outline</span>'
+          + '</button></div>';
+      }).join('') || '<div style="font-size:0.8125rem;color:var(--outline);">No documents yet</div>';
+      list.querySelectorAll('[data-action="remove-modal"]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const t = btn.dataset.doctype;
+          if (pendingModalDocs[t]) { delete pendingModalDocs[t]; }
+          else deleteDoc(shipmentId, t);
+          renderModalDocs(shipmentId);
+        });
+      });
+      const missing = docTypes.filter(t => !uploaded[t]);
+      renderModalDocBtns(missing, shipmentId);
+    });
+  } else {
+    // New shipment — show pending docs only
+    const uploaded = Object.keys(pendingModalDocs);
+    list.innerHTML = uploaded.map(t =>
+      '<div class="doc-row" data-doctype="' + t + '">'
+      + '<span class="material-symbols-outlined">picture_as_pdf</span>'
+      + '<div style="flex:1;min-width:0;">'
+      + '<div class="doc-name">' + pendingModalDocs[t].name + '</div>'
+      + '<div class="doc-type">' + DOC_LABELS[t] + '</div>'
+      + '</div>'
+      + '<button class="doc-action" data-action="remove-modal" data-doctype="' + t + '" title="Remove">'
+      + '<span class="material-symbols-outlined" style="font-size:18px;">delete_outline</span>'
+      + '</button></div>'
+    ).join('') || '';
+    list.querySelectorAll('[data-action="remove-modal"]').forEach(btn => {
+      btn.addEventListener('click', () => { delete pendingModalDocs[btn.dataset.doctype]; renderModalDocs(null); });
+    });
+    renderModalDocBtns(docTypes.filter(t => !pendingModalDocs[t]), null);
+  }
+}
+
+function renderModalDocBtns(missing, shipmentId) {
+  const btns = document.getElementById('modalDocBtns');
+  if (!btns) return;
+  btns.innerHTML = missing.map(t =>
+    '<button class="file-upload-btn" data-doctype="' + t + '" data-sid="' + (shipmentId||'') + '">'
+    + '<span class="material-symbols-outlined">upload_file</span>' + DOC_LABELS[t]
+    + '</button>'
+  ).join('');
+  btns.querySelectorAll('.file-upload-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      pendingModalDocType = btn.dataset.doctype;
+      pendingModalSid     = btn.dataset.sid || null;
+      document.getElementById('modalDocFileInput').value = '';
+      document.getElementById('modalDocFileInput').click();
+    });
+  });
+}
+
+let pendingModalDocType = null;
+let pendingModalSid     = null;
+
 // -- INCOTERMS ---------------------------------------------------------------
 // These incoterms mean the seller covers origin costs — grey out local cost field
 const INCOTERMS_NO_LOCAL_COST = ['CPT', 'DAP', 'FOB', 'CIF', 'CFR'];
@@ -4456,6 +4561,8 @@ function openEditModal(idx) {
   document.getElementById('entryModeTabs').style.display = 'none';
   document.getElementById('entryManual').style.display = '';
   document.getElementById('entryAuto').style.display = 'none';
+  pendingModalDocs = {};
+  renderModalDocs(s.id);
   document.getElementById('f-ref').value            = s.id;
   document.getElementById('f-ref').readOnly         = true;
   document.getElementById('f-ref').style.opacity    = '0.5';
@@ -4785,6 +4892,32 @@ window.addEventListener('load', async () => {
   document.getElementById('blFileInput').addEventListener('change', (e) => {
     if (e.target.files[0]) handleBlFile(e.target.files[0]);
   });
+  // ── MODAL DOCUMENT FILE INPUT ──────────────────────────────────────────────
+  document.getElementById('modalDocFileInput').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file || !pendingModalDocType) return;
+    if (!file.name.toLowerCase().endsWith('.pdf')) { alert('Please select a PDF file.'); return; }
+    if (file.size > 5 * 1024 * 1024) { alert('File too large. Maximum 5MB.'); return; }
+    const docType = pendingModalDocType;
+    const sid     = pendingModalSid;
+    pendingModalDocType = null;
+    pendingModalSid     = null;
+
+    if (sid) {
+      // Edit mode — upload immediately
+      try {
+        const base64 = await fileToBase64(file);
+        await uploadDoc(sid, docType, file.name, base64, file.size);
+        renderModalDocs(sid);
+      } catch(err) { alert('Upload failed. Try again.'); }
+    } else {
+      // New shipment — hold in memory until saved
+      const base64 = await fileToBase64(file);
+      pendingModalDocs[docType] = { name: file.name, base64, size: file.size };
+      renderModalDocs(null);
+    }
+  });
+
   // Drag and drop on drop zone
   const dropZone = document.getElementById('blDropZone');
   dropZone.addEventListener('dragover',  (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
