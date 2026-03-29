@@ -4586,8 +4586,26 @@ function fillFormFromBL(p, file) {
   switchEntryTab('manual');
 
   // Fill fields — only if value is present
-  if (p.vessel)         document.getElementById('f-vessel-name').value = p.vessel;
-  if (p.mmsi)           document.getElementById('f-mmsi').value         = p.mmsi;
+  if (p.vessel) {
+    document.getElementById('f-vessel-name').value = p.vessel;
+    // Try to auto-fill MMSI from KNOWN_VESSELS if not in parsed data
+    if (!p.mmsi) {
+      const vesselUpper = p.vessel.toUpperCase().trim();
+      // 1. Exact match
+      let mmsiMatch = Object.entries(KNOWN_VESSELS).find(([, v]) =>
+        v.name.toUpperCase() === vesselUpper
+      );
+      // 2. Partial match — B/L sometimes abbreviates or adds prefix
+      if (!mmsiMatch) {
+        mmsiMatch = Object.entries(KNOWN_VESSELS).find(([, v]) => {
+          const known = v.name.toUpperCase();
+          return known.includes(vesselUpper) || vesselUpper.includes(known);
+        });
+      }
+      if (mmsiMatch) document.getElementById('f-mmsi').value = mmsiMatch[0];
+    }
+  }
+  if (p.mmsi) document.getElementById('f-mmsi').value = p.mmsi;
   if (p.bl_number)      document.getElementById('f-ref').value           = p.bl_number;
   if (p.origin)         document.getElementById('f-origin').value        = p.origin;
   if (p.dest)           document.getElementById('f-dest').value          = p.dest;
