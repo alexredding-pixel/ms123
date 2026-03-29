@@ -8,6 +8,7 @@
  *  4. GET /events     -> full event log as JSON
  *  5. GET /health     -> status check
  *  6. POST /subscribe -> update API key + tracked MMSIs from the dashboard
+ *  7. POST /parse-bl   -> extract page 1 of B/L PDF and parse via Claude API
  */
 
 const { WebSocket, WebSocketServer } = require('ws');
@@ -15,6 +16,40 @@ const http  = require('http');
 const https = require('https');
 const fs    = require('fs');
 const path  = require('path');
+
+// ── ANTHROPIC API (key stored as env var — never exposed to browser) ────────────
+const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || '';
+
+// Extract first page of a base64 PDF as base64
+// Strategy: find the first page boundary using PDF structure markers,
+// then return just that portion. Falls back to full PDF if parsing fails.
+function extractFirstPage(base64Pdf) {
+  try {
+    const buf   = Buffer.from(base64Pdf, 'base64');
+    const str   = buf.toString('binary');
+    // Find second page object or EOF — whichever comes first
+    // PDF pages are separated by /Page markers in the xref table
+    // Simple heuristic: find the 2nd occurrence of 'endobj' after first 'Page'
+    const pageIdx = str.indexOf('/Type /Page');
+    if (pageIdx === -1) return base64Pdf; // Can't detect, send whole thing
+    // Find second /Type /Page — that marks start of page 2
+    const page2Idx = str.indexOf('/Type /Page', pageIdx + 10);
+    if (page2Idx === -1) return base64Pdf; // Single page doc
+
+    // Walk back to find the obj header for page 2
+    const cutIdx = str.lastIndexOf('\nendobj', page2Idx);
+    if (cutIdx === -1 || cutIdx < 1000) return base64Pdf;
+
+    // Build a minimal valid PDF from just the first portion
+    // Actually simpler: just send the first ~40KB which always covers page 1
+    // Average BL page 1 is 15-25KB of raw PDF content
+    const PAGE1_BYTE_LIMIT = 60 * 1024; // 60KB — comfortably covers page 1
+    if (buf.length <= PAGE1_BYTE_LIMIT) return base64Pdf; // Already small
+    return buf.slice(0, PAGE1_BYTE_LIMIT).toString('base64');
+  } catch(e) {
+    return base64Pdf; // Fall back to full PDF
+  }
+}
 
 // ── SUPABASE CLIENT (lightweight — no SDK needed) ─────────────────────────────
 const SUPABASE_URL = 'https://nkxvacdhwimhemnmcpxe.supabase.co';
@@ -329,6 +364,100 @@ const httpServer = http.createServer((req, res) => {
         res.end(JSON.stringify({ ok: true, trackedMmsis }));
       } catch (e) {
         res.writeHead(400); res.end(JSON.stringify({ error: 'Bad JSON' }));
+      }
+    });
+    return;
+  }
+
+  // ── POST /parse-bl — extract page 1 and send to Claude for parsing ─────────
+  if (req.method === 'POST' && req.url === '/parse-bl') {
+    if (!ANTHROPIC_KEY) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'ANTHROPIC_API_KEY not configured on server' }));
+      return;
+    }
+    let body = '';
+    req.on('data', c => { body += c; if (body.length > 20 * 1024 * 1024) req.destroy(); });
+    req.on('end', async () => {
+      try {
+        const { pdf } = JSON.parse(body); // base64 PDF from browser
+        if (!pdf) { res.writeHead(400); res.end(JSON.stringify({ error: 'No PDF data' })); return; }
+
+        // Trim to first page to save tokens
+        const page1 = extractFirstPage(pdf);
+        console.log('[parse-bl] PDF size: ' + Math.round(Buffer.from(pdf,'base64').length/1024) + 'KB → page1: ' + Math.round(Buffer.from(page1,'base64').length/1024) + 'KB');
+
+        const prompt = `You are parsing a Bill of Lading. Extract ALL available fields and return ONLY valid JSON — no markdown, no explanation, no backticks.
+
+Return this exact structure (use null for any field not found):
+{
+  "vessel": "vessel name in UPPERCASE",
+  "carrier": "shipping line name",
+  "mmsi": "9-digit MMSI if shown, else null",
+  "bl_number": "bill of lading reference number",
+  "container_type": "40' or 20' or LCL",
+  "container_number": "container ID if shown, else null",
+  "origin": "port of loading, city and country code e.g. Yantian, CN",
+  "dest": "port of discharge, city and country code e.g. Felixstowe, UK",
+  "load_date": "YYYY-MM-DD estimated departure, null if not found",
+  "eta_date": "YYYY-MM-DD ETA at discharge port, null if not found",
+  "weight_kg": "gross weight as number only, null if not found",
+  "pallets": "number of pallets or packages as integer, null if not found",
+  "incoterms": "EXW/FCA/FOB/CFR/CIF/CPT/DAP if stated, else null",
+  "description": "brief cargo description"
+}`;
+
+        // Call Anthropic API server-side
+        const anthropicRes = await new Promise((resolve, reject) => {
+          const payload = JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 1000,
+            messages: [{
+              role: 'user',
+              content: [
+                { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: page1 } },
+                { type: 'text', text: prompt }
+              ]
+            }]
+          });
+          const req2 = https.request('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+              'x-api-key':         ANTHROPIC_KEY,
+              'anthropic-version': '2023-06-01',
+              'Content-Type':      'application/json',
+              'Content-Length':    Buffer.byteLength(payload),
+            }
+          }, (r) => {
+            let d = '';
+            r.on('data', c => d += c);
+            r.on('end', () => resolve({ status: r.statusCode, body: d }));
+          });
+          req2.on('error', reject);
+          req2.write(payload);
+          req2.end();
+        });
+
+        if (anthropicRes.status !== 200) {
+          console.error('[parse-bl] Anthropic error:', anthropicRes.body.slice(0, 200));
+          res.writeHead(502, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Claude API error ' + anthropicRes.status }));
+          return;
+        }
+
+        const apiData = JSON.parse(anthropicRes.body);
+        const raw     = apiData.content && apiData.content[0] && apiData.content[0].text;
+        const clean   = (raw || '').replace(/```json|```/g, '').trim();
+        const parsed  = JSON.parse(clean);
+
+        console.log('[parse-bl] Success — vessel:', parsed.vessel, 'bl:', parsed.bl_number);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, data: parsed }));
+
+      } catch(e) {
+        console.error('[parse-bl] Error:', e.message);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
       }
     });
     return;

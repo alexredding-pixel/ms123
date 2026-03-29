@@ -1883,27 +1883,50 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
       </div><!-- /entryManual -->
 
       <!-- AUTO ENTRY CONTENT -->
-      <div id="entryAuto" style="display:none;">
-        <div style="width:100%;">
-          <div class="file-drop-zone" id="blDropZone" onclick="document.getElementById('blFileInput').click()">
-            <span class="material-symbols-outlined" style="font-size:44px;">upload_file</span>
-            <div style="font-size:0.9375rem;font-weight:700;color:var(--on-surface);margin-bottom:4px;">Drop Bill of Lading here</div>
-            <div style="font-size:0.8125rem;color:var(--on-surface-variant);">or click to browse &mdash; PDF only</div>
-            <input type="file" id="blFileInput" accept=".pdf" style="display:none;"/>
+      <div id="entryAuto" style="display:none;flex-direction:column;gap:16px;">
+
+        <!-- Drop zone -->
+        <div id="blDropZone" class="file-drop-zone" onclick="document.getElementById('blFileInput').click()">
+          <span class="material-symbols-outlined" style="font-size:44px;">upload_file</span>
+          <div style="font-size:0.9375rem;font-weight:700;color:var(--on-surface);margin-bottom:4px;">Drop Bill of Lading here</div>
+          <div style="font-size:0.8125rem;color:var(--on-surface-variant);">or click to browse — PDF only</div>
+          <input type="file" id="blFileInput" accept=".pdf" style="display:none;"/>
+        </div>
+
+        <!-- File chosen row -->
+        <div id="blFileChosen" style="display:none;">
+          <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--surface-container-low);border-radius:12px;border:1px solid var(--outline-variant);">
+            <span class="material-symbols-outlined" style="color:var(--secondary);font-size:24px;">picture_as_pdf</span>
+            <div style="flex:1;min-width:0;">
+              <div id="blFileName" style="font-size:0.875rem;font-weight:700;color:var(--on-surface);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
+              <div id="blFileSize" style="font-size:0.75rem;color:var(--on-surface-variant);margin-top:2px;"></div>
+            </div>
+            <button onclick="clearBlFile()" style="background:none;border:none;cursor:pointer;padding:4px;color:var(--outline);display:flex;align-items:center;">
+              <span class="material-symbols-outlined" style="font-size:18px;">close</span>
+            </button>
           </div>
-          <div id="blFileChosen" style="display:none;margin-top:12px;">
-            <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--surface-container-low);border-radius:12px;border:1px solid var(--outline-variant);">
-              <span class="material-symbols-outlined" style="color:var(--secondary);font-size:24px;">picture_as_pdf</span>
-              <div style="flex:1;min-width:0;">
-                <div id="blFileName" style="font-size:0.875rem;font-weight:700;color:var(--on-surface);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">filename.pdf</div>
-                <div id="blFileSize" style="font-size:0.75rem;color:var(--on-surface-variant);margin-top:2px;"></div>
-              </div>
-              <button onclick="clearBlFile()" style="background:none;border:none;cursor:pointer;padding:4px;color:var(--outline);display:flex;align-items:center;">
-                <span class="material-symbols-outlined" style="font-size:18px;">close</span>
-              </button>
+        </div>
+
+        <!-- Parsing status -->
+        <div id="blParseStatus" style="display:none;padding:14px 16px;border-radius:12px;background:var(--surface-container-low);border:1px solid var(--outline-variant);">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span id="blParseIcon" class="material-symbols-outlined" style="font-size:22px;color:var(--primary);animation:spin 1s linear infinite;">progress_activity</span>
+            <div>
+              <div id="blParseMsg" style="font-size:0.875rem;font-weight:700;color:var(--on-surface);">Reading document…</div>
+              <div id="blParseDetail" style="font-size:0.75rem;color:var(--on-surface-variant);margin-top:2px;"></div>
             </div>
           </div>
         </div>
+
+        <!-- Extracted fields preview -->
+        <div id="blExtracted" style="display:none;">
+          <div style="font-size:0.5625rem;font-weight:800;letter-spacing:0.14em;text-transform:uppercase;color:var(--on-surface-variant);margin-bottom:10px;">Extracted fields — review before saving</div>
+          <div id="blExtractedGrid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"></div>
+          <div style="margin-top:12px;padding:10px 14px;background:var(--primary-fixed);border-radius:10px;font-size:0.8125rem;color:var(--on-primary-fixed);">
+            Fields pre-filled in Manual Entry. Switch tab to review and complete any missing values.
+          </div>
+        </div>
+
       </div><!-- /entryAuto -->
 
     </div><!-- /shared add-modal-body -->
@@ -3251,8 +3274,7 @@ function submitAddShipment() {
       setTimeout(() => document.getElementById('blDropZone').style.borderColor = '', 1500);
       return;
     }
-    // Placeholder — parse functionality added later
-    alert('B/L parsing coming soon. Switch to Manual Entry to add fields now.');
+    parseBillOfLading(blFileData);
     return;
   }
 
@@ -4448,6 +4470,127 @@ async function removeDoc(docType, shipmentId, s) {
   if (!confirm('Remove this ' + DOC_LABELS[docType] + '?')) return;
   await deleteDoc(shipmentId || s.id, docType);
   renderDocSection(s || shipments[activeId]);
+}
+
+// -- BILL OF LADING PARSING --------------------------------------------------
+async function parseBillOfLading(file) {
+  const btn = document.getElementById('submitAddShipment');
+  btn.disabled = true;
+
+  // Show status
+  function setStatus(msg, detail, icon, spinning) {
+    document.getElementById('blParseStatus').style.display = 'block';
+    document.getElementById('blParseMsg').textContent = msg;
+    document.getElementById('blParseDetail').textContent = detail || '';
+    document.getElementById('blParseIcon').textContent = icon || 'progress_activity';
+    document.getElementById('blParseIcon').style.animation = spinning ? 'spin 1s linear infinite' : 'none';
+  }
+
+  try {
+    setStatus('Reading document…', 'Converting PDF to base64', 'progress_activity', true);
+    const base64 = await fileToBase64(file);
+
+    setStatus('Sending to Claude…', 'Analysing Bill of Lading — page 1 only', 'auto_awesome', true);
+
+    // Send to Railway proxy — API key stays server-side, never exposed to browser
+    const PROXY = 'https://ms123-production.up.railway.app';
+    const response = await fetch(PROXY + '/parse-bl', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pdf: base64 })
+    });
+
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.error || 'Proxy error ' + response.status);
+    }
+    const result = await response.json();
+    if (!result.ok || !result.data) throw new Error(result.error || 'No data returned');
+
+    setStatus('Parsing response…', '', 'progress_activity', true);
+    const parsed = result.data;
+
+    // Show extracted fields preview
+    setStatus('Done', 'Fields extracted — review below', 'check_circle', false);
+    document.getElementById('blParseIcon').style.color = 'var(--on-tertiary-fixed-variant)';
+    showExtractedFields(parsed);
+
+    // Pre-fill Manual Entry form
+    fillFormFromBL(parsed, file);
+
+    // Store the BL file as a pending doc
+    pendingModalDocs['bl'] = { name: file.name, base64, size: file.size };
+
+  } catch(err) {
+    console.error('[BL parse]', err);
+    setStatus('Parsing failed', err.message || 'Please try again or use Manual Entry', 'error', false);
+    document.getElementById('blParseIcon').style.color = 'var(--error)';
+    document.getElementById('blParseIcon').style.animation = 'none';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function showExtractedFields(p) {
+  const grid = document.getElementById('blExtractedGrid');
+  const fields = [
+    ['Vessel',          p.vessel],
+    ['Carrier',         p.carrier],
+    ['Container Type',  p.container_type],
+    ['B/L Number',      p.bl_number],
+    ['Origin',          p.origin],
+    ['Destination',     p.dest],
+    ['Loading Date',    p.load_date],
+    ['ETA',             p.eta_date],
+    ['Weight',          p.weight_kg ? p.weight_kg + ' kg' : null],
+    ['Pallets',         p.pallets],
+    ['Incoterms',       p.incoterms],
+    ['Cargo',           p.description],
+  ];
+  grid.innerHTML = fields.filter(([,v]) => v !== null && v !== undefined).map(([label, val]) =>
+    '<div style="padding:8px 12px;background:var(--surface-container-lowest);border-radius:8px;">'
+    + '<div style="font-size:0.5625rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:var(--outline);">' + label + '</div>'
+    + '<div style="font-size:0.8125rem;font-weight:600;color:var(--on-surface);margin-top:2px;">' + val + '</div>'
+    + '</div>'
+  ).join('');
+  document.getElementById('blExtracted').style.display = 'block';
+}
+
+function fillFormFromBL(p, file) {
+  // Switch to manual tab to show pre-filled form
+  switchEntryTab('manual');
+
+  // Fill fields — only if value is present
+  if (p.vessel)         document.getElementById('f-vessel-name').value = p.vessel;
+  if (p.mmsi)           document.getElementById('f-mmsi').value         = p.mmsi;
+  if (p.bl_number)      document.getElementById('f-ref').value           = p.bl_number;
+  if (p.origin)         document.getElementById('f-origin').value        = p.origin;
+  if (p.dest)           document.getElementById('f-dest').value          = p.dest;
+  if (p.load_date)      document.getElementById('f-load-date').value     = p.load_date;
+  if (p.eta_date)       document.getElementById('f-arrive-date').value   = p.eta_date;
+  if (p.container_type) document.getElementById('f-cargo').value         = p.container_type;
+  if (p.carrier)        document.getElementById('f-carrier').value       = p.carrier;
+  if (p.weight_kg)      document.getElementById('f-weight').value        = p.weight_kg;
+  if (p.pallets)        document.getElementById('f-pallets').value       = p.pallets;
+  if (p.incoterms)      { document.getElementById('f-incoterms').value = p.incoterms; handleIncotermsChange(p.incoterms); }
+
+  // Highlight pre-filled fields so user knows what was auto-filled
+  ['f-vessel-name','f-mmsi','f-ref','f-origin','f-dest','f-load-date',
+   'f-arrive-date','f-cargo','f-carrier','f-weight','f-pallets','f-incoterms']
+    .forEach(id => {
+      const el = document.getElementById(id);
+      if (el && el.value) {
+        el.style.boxShadow = '0 0 0 2px rgba(12,82,22,0.3)';
+        el.style.background = 'rgba(12,82,22,0.05)';
+        el.addEventListener('focus', () => {
+          el.style.boxShadow = '';
+          el.style.background = '';
+        }, { once: true });
+      }
+    });
+
+  // Auto-store BL as pending doc
+  renderModalDocs(null);
 }
 
 // -- MODAL DOCUMENT HANDLING -------------------------------------------------
