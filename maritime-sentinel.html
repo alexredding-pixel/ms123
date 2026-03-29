@@ -547,6 +547,10 @@ html, body {
   position: relative;
   align-items: flex-start;
 }
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
 @keyframes slideIn {
   from { opacity: 0; transform: translateX(10px); }
   to { opacity: 1; transform: translateX(0); }
@@ -3989,6 +3993,14 @@ function logRowHtml(s, rowIdx) {
     + '</div>'
 
     + '</div></div>'
+
+    // Documents section in log
+    + '<div class="log-drawer-section" id="log-docs-' + rowIdx + '">'
+    + '<div class="log-drawer-label">Documents</div>'
+    + '<div style="font-size:0.8125rem;color:var(--outline);font-style:italic;">Loading…</div>'
+    + '</div>'
+
+    + '</div></div>'
     + '</div>';
 }
 
@@ -4005,7 +4017,45 @@ function toggleLogDrawer(id, row) {
   if (!isOpen) {
     drawer.classList.add('open');
     if (chevron) chevron.style.transform = 'rotate(180deg)';
+    // Load documents for this shipment
+    const rowIdx = id.replace('log-drawer-', '');
+    loadLogDocs(rowIdx, row);
   }
+}
+
+async function loadLogDocs(rowIdx, row) {
+  const docsEl = document.getElementById('log-docs-' + rowIdx);
+  if (!docsEl) return;
+  // Find the shipment from the row's position in the sorted completed list
+  const completed = getLogShipments().sort((a,b) =>
+    new Date(b.completedAt||0) - new Date(a.completedAt||0));
+  const s = completed[parseInt(rowIdx)];
+  if (!s) return;
+
+  const rows = await fetchDocs(s.id);
+  if (!rows || rows.length === 0) {
+    docsEl.innerHTML = '<div class="log-drawer-label">Documents</div>'
+      + '<div style="font-size:0.8125rem;color:var(--outline);">No documents uploaded</div>';
+    return;
+  }
+  docsEl.innerHTML = '<div class="log-drawer-label">Documents</div>'
+    + rows.map(doc =>
+      '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--surface-container-high);">'
+      + '<span class="material-symbols-outlined" style="font-size:16px;color:var(--secondary);">picture_as_pdf</span>'
+      + '<div style="flex:1;min-width:0;">'
+      + '<div style="font-size:0.8125rem;font-weight:600;color:var(--on-surface);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + doc.filename + '</div>'
+      + '<div style="font-size:0.6875rem;color:var(--on-surface-variant);">' + DOC_LABELS[doc.doc_type]
+        + (doc.size_bytes ? ' · ' + Math.round(doc.size_bytes/1024) + ' KB' : '') + '</div>'
+      + '</div>'
+      + '<button data-sid="' + s.id + '" data-dt="' + doc.doc_type + '" class="log-view-doc doc-action" title="View">'
+      + '<span class="material-symbols-outlined" style="font-size:18px;">open_in_new</span>'
+      + '</button>'
+      + '</div>'
+    ).join('');
+
+  docsEl.querySelectorAll('.log-view-doc').forEach(btn => {
+    btn.addEventListener('click', () => viewDoc(btn.dataset.dt, btn.dataset.sid));
+  });
 }
 
 // -- AUTH --------------------------------------------------------------------
@@ -4236,49 +4286,106 @@ function handleBlFile(file) {
 }
 
 // -- DOCUMENT SECTION (detail panel) ----------------------------------------
+// -- DOCUMENT STORAGE (Supabase shipment_docs table) -------------------------
 const DOC_LABELS = { bl: 'Bill of Lading', invoice: 'Commercial Invoice', packing: 'Packing List' };
 let pendingDocType = null;
 
+// ── Supabase CRUD for docs ────────────────────────────────────────────────────
+async function fetchDocs(shipmentId) {
+  const rows = await sbFetch('GET', 'shipment_docs', null,
+    'shipment_id=eq.' + encodeURIComponent(shipmentId) + '&select=doc_type,filename,size_bytes,uploaded_at');
+  return rows || [];
+}
+
+async function uploadDoc(shipmentId, docType, filename, base64Data, sizeBytes) {
+  // Upsert — replaces existing doc of same type for this shipment
+  return await sbFetch('POST', 'shipment_docs',
+    { shipment_id: shipmentId, doc_type: docType, filename, data: base64Data,
+      size_bytes: sizeBytes, uploaded_at: new Date().toISOString() },
+    'on_conflict=shipment_id,doc_type');
+}
+
+async function fetchDocData(shipmentId, docType) {
+  const rows = await sbFetch('GET', 'shipment_docs', null,
+    'shipment_id=eq.' + encodeURIComponent(shipmentId) +
+    '&doc_type=eq.' + docType + '&select=data,filename');
+  return (rows && rows[0]) || null;
+}
+
+async function deleteDoc(shipmentId, docType) {
+  const token = (currentSession && currentSession.access_token) ? currentSession.access_token : SB_KEY;
+  const url = SB_URL + '/rest/v1/shipment_docs?shipment_id=eq.' +
+    encodeURIComponent(shipmentId) + '&doc_type=eq.' + docType;
+  await fetch(url, {
+    method: 'DELETE',
+    headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + token }
+  });
+}
+
+// ── File-to-base64 helper ─────────────────────────────────────────────────────
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload  = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// ── Trigger upload input ──────────────────────────────────────────────────────
 function triggerDocUpload(docType) {
   pendingDocType = docType;
   document.getElementById('docFileInput').value = '';
   document.getElementById('docFileInput').click();
 }
 
-function renderDocSection(s) {
-  const list    = document.getElementById('dpDocsList');
-  const btns    = document.getElementById('dpDocUploadBtns');
+// ── Render docs section ───────────────────────────────────────────────────────
+async function renderDocSection(s) {
+  const list = document.getElementById('dpDocsList');
+  const btns = document.getElementById('dpDocUploadBtns');
   if (!list || !btns) return;
-  const docs    = s.docs || {};
+
+  // Show loading state
+  list.innerHTML = '<div style="font-size:0.8125rem;color:var(--outline);padding:4px 0;">Loading documents…</div>';
+  btns.innerHTML = '';
+
   const docTypes = ['bl', 'invoice', 'packing'];
-  const uploaded = docTypes.filter(t => docs[t]);
+  const rows = await fetchDocs(s.id);
+  const uploaded = {};
+  rows.forEach(r => { uploaded[r.doc_type] = r; });
 
   // Render uploaded docs
-  list.innerHTML = uploaded.map(t => {
-    const doc = docs[t];
+  list.innerHTML = docTypes.filter(t => uploaded[t]).map(t => {
+    const doc = uploaded[t];
+    const kb = doc.size_bytes ? Math.round(doc.size_bytes / 1024) + ' KB' : '';
+    const date = doc.uploaded_at
+      ? new Date(doc.uploaded_at).toLocaleDateString('en-GB', {day:'2-digit',month:'short'})
+      : '';
     return '<div class="doc-row" data-doctype="' + t + '">'
       + '<span class="material-symbols-outlined">picture_as_pdf</span>'
       + '<div style="flex:1;min-width:0;">'
-      + '<div class="doc-name">' + (doc.name || DOC_LABELS[t]) + '</div>'
-      + '<div class="doc-type">' + DOC_LABELS[t] + '</div>'
+      + '<div class="doc-name">' + doc.filename + '</div>'
+      + '<div class="doc-type">' + DOC_LABELS[t]
+        + (kb ? ' · ' + kb : '') + (date ? ' · ' + date : '') + '</div>'
       + '</div>'
-      + '<button class="doc-action" data-action="view" title="View">'
+      + '<button class="doc-action" data-action="view" title="View document">'
       + '<span class="material-symbols-outlined" style="font-size:18px;">open_in_new</span>'
       + '</button>'
-      + '<button class="doc-action" data-action="remove" title="Remove" style="color:var(--outline);">'
+      + '<button class="doc-action" data-action="remove" title="Remove document">'
       + '<span class="material-symbols-outlined" style="font-size:18px;">delete_outline</span>'
       + '</button>'
       + '</div>';
-  }).join('');
+  }).join('') || '';
+
   list.querySelectorAll('.doc-action').forEach(btn => {
     btn.addEventListener('click', () => {
       const dt = btn.closest('[data-doctype]').dataset.doctype;
-      btn.dataset.action === 'view' ? viewDoc(dt) : removeDoc(dt);
+      btn.dataset.action === 'view' ? viewDoc(dt, s.id) : removeDoc(dt, s.id, s);
     });
   });
 
-  // Show upload buttons only for missing doc types
-  const missing = docTypes.filter(t => !docs[t]);
+  // Upload buttons for missing types
+  const missing = docTypes.filter(t => !uploaded[t]);
   btns.innerHTML = missing.map(t =>
     '<button class="file-upload-btn" data-doctype="' + t + '">'
     + '<span class="material-symbols-outlined">upload_file</span>'
@@ -4290,20 +4397,35 @@ function renderDocSection(s) {
   });
 }
 
-function viewDoc(docType) {
+// ── View doc — fetch base64, open as PDF in new tab ──────────────────────────
+async function viewDoc(docType, shipmentId) {
   if (activeId === null) return;
-  const doc = (shipments[activeId].docs || {})[docType];
-  if (doc && doc.url) window.open(doc.url, '_blank');
-  else alert('File viewer coming soon — upload functionality will be added with Supabase Storage.');
+  const sid = shipmentId || shipments[activeId].id;
+  const btnEl = document.querySelector('.doc-row[data-doctype="' + docType + '"] [data-action="view"]');
+  if (btnEl) btnEl.innerHTML = '<span class="material-symbols-outlined" style="font-size:18px;animation:spin 1s linear infinite;">progress_activity</span>';
+  try {
+    const doc = await fetchDocData(sid, docType);
+    if (!doc || !doc.data) { alert('Document not found.'); return; }
+    // Decode base64 and open as blob URL
+    const binary = atob(doc.data);
+    const bytes  = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const blob = new Blob([bytes], { type: 'application/pdf' });
+    const url  = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+  } catch(e) {
+    alert('Could not load document. Please try again.');
+  } finally {
+    if (btnEl) btnEl.innerHTML = '<span class="material-symbols-outlined" style="font-size:18px;">open_in_new</span>';
+  }
 }
 
-function removeDoc(docType) {
-  if (activeId === null) return;
-  const s = shipments[activeId];
-  if (!s.docs) return;
-  delete s.docs[docType];
-  saveShipments();
-  renderDocSection(s);
+// ── Remove doc ────────────────────────────────────────────────────────────────
+async function removeDoc(docType, shipmentId, s) {
+  if (!confirm('Remove this ' + DOC_LABELS[docType] + '?')) return;
+  await deleteDoc(shipmentId || s.id, docType);
+  renderDocSection(s || shipments[activeId]);
 }
 
 // -- INCOTERMS ---------------------------------------------------------------
@@ -4674,16 +4796,40 @@ window.addEventListener('load', async () => {
   });
 
   // ── DOC UPLOAD (detail panel) ─────────────────────────────────────────────
-  document.getElementById('docFileInput').addEventListener('change', (e) => {
+  document.getElementById('docFileInput').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file || activeId === null || !pendingDocType) return;
+    if (!file.name.toLowerCase().endsWith('.pdf')) {
+      alert('Please select a PDF file.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert('File too large. Maximum size is 5MB.');
+      return;
+    }
     const s = shipments[activeId];
-    if (!s.docs) s.docs = {};
-    // Store filename as a placeholder — actual upload to Supabase Storage comes later
-    s.docs[pendingDocType] = { name: file.name, size: file.size, addedAt: new Date().toISOString(), url: null };
-    saveShipments();
-    renderDocSection(s);
+    const docType = pendingDocType;
     pendingDocType = null;
+
+    // Show uploading state
+    const btns = document.getElementById('dpDocUploadBtns');
+    const btn = btns && btns.querySelector('[data-doctype="' + docType + '"]');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:18px;animation:spin 1s linear infinite;">progress_activity</span> Uploading…';
+    }
+
+    try {
+      const base64 = await fileToBase64(file);
+      await uploadDoc(s.id, docType, file.name, base64, file.size);
+      await renderDocSection(s);
+    } catch(err) {
+      alert('Upload failed. Please try again.');
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<span class="material-symbols-outlined">upload_file</span>' + DOC_LABELS[docType];
+      }
+    }
   });
 
   // ── RESET TABS ON MODAL OPEN ──────────────────────────────────────────────
