@@ -18,7 +18,7 @@ const path  = require('path');
 
 // ── SUPABASE CLIENT (lightweight — no SDK needed) ─────────────────────────────
 const SUPABASE_URL = 'https://nkxvacdhwimhemnmcpxe.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5reHZhY2Rod2ltaGVtbm1jcHhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2MjQxMTgsImV4cCI6MjA5MDIwMDExOH0.hc1kttUnPXg62yeo6xrRSXcily05zLA-Qo6AtDbYEhE';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5reHZhY2Rod2ltaGVtbm1jcHhlIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDYyNDExOCwiZXhwIjoyMDkwMjAwMTE4fQ.IGljoHOaL1Xlf6qsAk-CVl4LX5vokeaeEFr_7zLzXkk'; // service_role — bypasses RLS for server-side writes
 
 function supabase(method, table, body, params) {
   return new Promise((resolve) => {

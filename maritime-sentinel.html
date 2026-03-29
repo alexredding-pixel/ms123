@@ -1193,6 +1193,44 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
 </head>
 <body>
 
+<!-- LOGIN SCREEN -->
+<div id="loginScreen" style="display:none;position:fixed;inset:0;z-index:1000;background:var(--surface-container-low);align-items:center;justify-content:center;flex-direction:column;">
+  <div style="width:400px;max-width:92vw;">
+    <div style="text-align:center;margin-bottom:32px;">
+      <div style="font-size:2rem;font-weight:900;color:var(--primary);letter-spacing:-0.02em;line-height:1;">Maritime<br>Sentinel</div>
+      <div style="font-size:0.875rem;color:var(--on-surface-variant);margin-top:8px;">Vessel Tracking Authority</div>
+    </div>
+    <div style="background:var(--surface-container-lowest);border-radius:20px;padding:32px;box-shadow:0 20px 60px rgba(0,23,54,0.12);">
+      <div style="font-size:1.125rem;font-weight:900;color:var(--primary);margin-bottom:6px;">Sign in</div>
+      <div style="font-size:0.8125rem;color:var(--on-surface-variant);margin-bottom:24px;">Enter your credentials to access the dashboard.</div>
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <div>
+          <label style="font-size:0.6875rem;font-weight:700;color:var(--on-surface-variant);letter-spacing:0.06em;text-transform:uppercase;display:block;margin-bottom:6px;">Email</label>
+          <input id="loginEmail" type="email" placeholder="you@example.com" autocomplete="email"
+            style="width:100%;background:var(--surface-container-high);border:none;outline:none;border-radius:10px;padding:12px 14px;font-size:0.9375rem;font-family:inherit;color:var(--on-surface);box-sizing:border-box;transition:box-shadow 0.15s;"/>
+        </div>
+        <div>
+          <label style="font-size:0.6875rem;font-weight:700;color:var(--on-surface-variant);letter-spacing:0.06em;text-transform:uppercase;display:block;margin-bottom:6px;">Password</label>
+          <div style="position:relative;">
+            <input id="loginPassword" type="password" placeholder="••••••••" autocomplete="current-password"
+              style="width:100%;background:var(--surface-container-high);border:none;outline:none;border-radius:10px;padding:12px 14px;font-size:0.9375rem;font-family:inherit;color:var(--on-surface);box-sizing:border-box;transition:box-shadow 0.15s;padding-right:44px;"/>
+            <button id="loginShowPw" onclick="toggleLoginPw()" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;padding:4px;color:var(--outline);display:flex;align-items:center;">
+              <span class="material-symbols-outlined" style="font-size:18px;">visibility</span>
+            </button>
+          </div>
+        </div>
+        <div id="loginError" style="display:none;font-size:0.8125rem;color:var(--error);background:var(--error-container);border-radius:8px;padding:10px 14px;"></div>
+        <button id="loginBtn" onclick="doLogin()" style="width:100%;background:var(--primary);color:white;border:none;border-radius:12px;padding:14px;font-size:1rem;font-weight:700;font-family:inherit;cursor:pointer;margin-top:4px;transition:opacity 0.15s;">
+          Sign in
+        </button>
+      </div>
+    </div>
+    <div style="text-align:center;margin-top:20px;font-size:0.75rem;color:var(--outline);">
+      Maritime Sentinel &mdash; Internal Operations Platform
+    </div>
+  </div>
+</div>
+
 <!-- SIDEBAR -->
 <aside class="sidebar">
   <div class="sidebar-logo">
@@ -1217,14 +1255,20 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
     <span class="material-symbols-outlined">add_circle</span>
     New Shipment
   </button>
-  <div class="sidebar-user">
-    <div class="user-avatar">
-      <img src="https://lh3.googleusercontent.com/aida-public/AB6AXuCvfAU7lA9VndoaYNbQp8ES0nT1jjijKGIEmtqUY06aU6yH55xvYCIV3eIvpagNJ800c5_DE9xZ0YKiQ8JQuTlQh0Y7Exrn7FB2w8jN8U6fjhtxHIiFsRS7GvcTW1KtN3xdPSMDEdZb4GOikDpyJh1NOMWZdQM_Icy9dXitQ4xMGZaVCe9cDZhz9kvq0R5pz39O3WxGlamhWbJrlPOOsaj3BPb8jy7KP_izQFJOIs3DEKXQgBVK6NjVsrYOVjuWFygbGWAW_XZAwsU" alt="Capt. Sterling"/>
+  <div class="sidebar-user" style="flex-direction:column;align-items:stretch;gap:8px;padding:12px 16px;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div style="width:32px;height:32px;border-radius:50%;background:var(--primary-fixed);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <span class="material-symbols-outlined" style="font-size:18px;color:var(--primary);">person</span>
+      </div>
+      <div style="min-width:0;flex:1;">
+        <div class="name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">User</div>
+        <div class="role" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Loading...</div>
+      </div>
     </div>
-    <div>
-      <div class="name">Capt. Sterling</div>
-      <div class="role">Chief Logistics Officer</div>
-    </div>
+    <button onclick="doLogout()" style="width:100%;display:flex;align-items:center;justify-content:center;gap:6px;padding:7px 12px;border-radius:8px;border:1px solid rgba(0,23,54,0.12);background:transparent;cursor:pointer;font-size:0.75rem;font-weight:700;font-family:inherit;color:var(--on-surface-variant);transition:background 0.15s;">
+      <span class="material-symbols-outlined" style="font-size:15px;">logout</span>
+      Sign out
+    </button>
   </div>
 </aside>
 
@@ -2016,12 +2060,14 @@ const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 
 async function sbFetch(method, table, body, params) {
   const url = SB_URL + '/rest/v1/' + table + (params ? '?' + params : '');
+  // Use session token if available, otherwise fall back to anon key
+  const token = (currentSession && currentSession.access_token) ? currentSession.access_token : SB_KEY;
   try {
     const res = await fetch(url, {
       method,
       headers: {
         'apikey':        SB_KEY,
-        'Authorization': 'Bearer ' + SB_KEY,
+        'Authorization': 'Bearer ' + token,
         'Content-Type':  'application/json',
         'Prefer':        method === 'POST' ? 'resolution=merge-duplicates,return=minimal' : 'return=minimal',
       },
@@ -3962,6 +4008,170 @@ function toggleLogDrawer(id, row) {
   }
 }
 
+// -- AUTH --------------------------------------------------------------------
+let currentSession = null;
+
+async function authFetch(method, path, body) {
+  const token = currentSession?.access_token || SB_KEY;
+  const url = SB_URL + path;
+  const res = await fetch(url, {
+    method,
+    headers: {
+      'apikey': SB_KEY,
+      'Authorization': 'Bearer ' + token,
+      'Content-Type': 'application/json',
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  return res.ok ? await res.json() : null;
+}
+
+async function doLogin() {
+  const email    = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const errEl    = document.getElementById('loginError');
+  const btn      = document.getElementById('loginBtn');
+  if (!email || !password) {
+    showLoginError('Please enter your email and password.');
+    return;
+  }
+  btn.textContent = 'Signing in…';
+  btn.style.opacity = '0.7';
+  btn.disabled = true;
+  errEl.style.display = 'none';
+  try {
+    const res = await fetch(SB_URL + '/auth/v1/token?grant_type=password', {
+      method: 'POST',
+      headers: { 'apikey': SB_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.access_token) {
+      showLoginError(data.error_description || data.msg || 'Invalid email or password.');
+      btn.textContent = 'Sign in';
+      btn.style.opacity = '1';
+      btn.disabled = false;
+      return;
+    }
+    currentSession = data;
+    localStorage.setItem('ms_session', JSON.stringify({
+      access_token:  data.access_token,
+      refresh_token: data.refresh_token,
+      expires_at:    Date.now() + data.expires_in * 1000,
+      user:          data.user,
+    }));
+    onAuthSuccess();
+  } catch(e) {
+    showLoginError('Connection error. Please try again.');
+    btn.textContent = 'Sign in';
+    btn.style.opacity = '1';
+    btn.disabled = false;
+  }
+}
+
+function showLoginError(msg) {
+  const el = document.getElementById('loginError');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+function toggleLoginPw() {
+  const inp = document.getElementById('loginPassword');
+  const ico = document.querySelector('#loginShowPw .material-symbols-outlined');
+  if (inp.type === 'password') { inp.type = 'text';     ico.textContent = 'visibility_off'; }
+  else                         { inp.type = 'password'; ico.textContent = 'visibility'; }
+}
+
+async function tryRestoreSession() {
+  try {
+    const saved = localStorage.getItem('ms_session');
+    if (!saved) return false;
+    const session = JSON.parse(saved);
+    // If expires in > 5 minutes, use it directly
+    if (session.expires_at && session.expires_at - Date.now() > 300000) {
+      currentSession = session;
+      return true;
+    }
+    // Try to refresh
+    if (session.refresh_token) {
+      const res = await fetch(SB_URL + '/auth/v1/token?grant_type=refresh_token', {
+        method: 'POST',
+        headers: { 'apikey': SB_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: session.refresh_token }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        currentSession = data;
+        localStorage.setItem('ms_session', JSON.stringify({
+          access_token:  data.access_token,
+          refresh_token: data.refresh_token,
+          expires_at:    Date.now() + data.expires_in * 1000,
+          user:          data.user,
+        }));
+        return true;
+      }
+    }
+  } catch(e) {}
+  localStorage.removeItem('ms_session');
+  return false;
+}
+
+function doLogout() {
+  currentSession = null;
+  localStorage.removeItem('ms_session');
+  localStorage.removeItem('ms_shipments_cache');
+  shipments = [];
+  showLoginScreen();
+}
+
+function showLoginScreen() {
+  document.getElementById('loginScreen').style.display  = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+
+function hideLoginScreen() {
+  document.getElementById('loginScreen').style.display  = 'none';
+  document.body.style.overflow = '';
+}
+
+function onAuthSuccess() {
+  hideLoginScreen();
+  // Update sbFetch to use session token from now on
+  // Sync shipments with authenticated session
+  syncShipmentsFromSupabase();
+  // Show user email in sidebar
+  const userEl = document.querySelector('.sidebar-user .name');
+  if (userEl && currentSession?.user?.email) {
+    userEl.textContent = currentSession.user.email.split('@')[0];
+  }
+  const roleEl = document.querySelector('.sidebar-user .role');
+  if (roleEl && currentSession?.user?.email) {
+    roleEl.textContent = currentSession.user.email;
+  }
+}
+
+// Auto-refresh session every 45 minutes
+setInterval(async () => {
+  if (!currentSession?.refresh_token) return;
+  try {
+    const res = await fetch(SB_URL + '/auth/v1/token?grant_type=refresh_token', {
+      method: 'POST',
+      headers: { 'apikey': SB_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: currentSession.refresh_token }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      currentSession = data;
+      localStorage.setItem('ms_session', JSON.stringify({
+        access_token:  data.access_token,
+        refresh_token: data.refresh_token,
+        expires_at:    Date.now() + data.expires_in * 1000,
+        user:          data.user,
+      }));
+    }
+  } catch(e) {}
+}, 45 * 60 * 1000);
+
 // -- SETTINGS ----------------------------------------------------------------
 let shipmentsPerPage = parseInt(localStorage.getItem('ms_per_page') || '20');
 let currentTheme     = localStorage.getItem('ms_theme') || 'light';
@@ -4163,7 +4373,17 @@ function closeEditMode() {
 }
 
 // -- BOOT ----------------------------------------------------------------------
-window.addEventListener('load', () => {
+window.addEventListener('load', async () => {
+  // ── AUTH CHECK ──────────────────────────────────────────────────────────────
+  const authenticated = await tryRestoreSession();
+  if (!authenticated) {
+    showLoginScreen();
+    // Wire login form enter key
+    document.getElementById('loginEmail').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('loginPassword').focus(); });
+    document.getElementById('loginPassword').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+  }
+  // Continue boot regardless — show cached data while auth resolves
+
   // Wire up modal buttons
   // Clear any old demo data from localStorage if it contains hardcoded IDs
   try {
