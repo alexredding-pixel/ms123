@@ -1692,11 +1692,9 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
     <!-- Entry mode tabs (hidden in edit mode) -->
     <div class="modal-tabs" id="entryModeTabs">
       <button class="modal-tab active" id="tabManual" onclick="switchEntryTab('manual')">
-        <span class="material-symbols-outlined">edit_note</span>
         Manual Entry
       </button>
       <button class="modal-tab" id="tabAuto" onclick="switchEntryTab('auto')">
-        <span class="material-symbols-outlined">auto_awesome</span>
         Auto Entry
       </button>
     </div>
@@ -4306,7 +4304,7 @@ function switchEntryTab(tab) {
   if (isManual) {
     submitBtn.innerHTML = 'Add Shipment';
   } else {
-    submitBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size:18px;vertical-align:middle;">auto_awesome</span> Parse &amp; Fill Fields';
+    submitBtn.innerHTML = 'Parse &amp; Fill Fields';
   }
 }
 
@@ -4487,10 +4485,10 @@ async function parseBillOfLading(file) {
   }
 
   try {
-    setStatus('Reading document…', 'Converting PDF to base64', 'progress_activity', true);
+    setStatus('Reading document…', '', 'progress_activity', true);
     const base64 = await fileToBase64(file);
 
-    setStatus('Sending to Claude…', 'Analysing Bill of Lading — page 1 only', 'auto_awesome', true);
+    setStatus('Analysing document…', '', 'progress_activity', true);
 
     // Send to Railway proxy — API key stays server-side, never exposed to browser
     const PROXY = 'https://ms123-production.up.railway.app';
@@ -4507,7 +4505,6 @@ async function parseBillOfLading(file) {
     const result = await response.json();
     if (!result.ok || !result.data) throw new Error(result.error || 'No data returned');
 
-    setStatus('Parsing response…', '', 'progress_activity', true);
     const parsed = result.data;
 
     // Show extracted fields preview
