@@ -1078,8 +1078,9 @@ tr.selected .row-chevron { background: var(--primary-fixed); color: var(--primar
   position: fixed; inset: 0; z-index: 200;
   background: rgba(0,23,54,0.45); backdrop-filter: blur(6px);
   display: none; align-items: center; justify-content: center;
+  pointer-events: none;
 }
-.add-modal-backdrop.open { display: flex; }
+.add-modal-backdrop.open { display: flex; pointer-events: all; }
 .add-modal {
   background: var(--surface-container-lowest);
   border-radius: 20px; width: 560px; max-width: 95vw;
@@ -1653,7 +1654,7 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
     </div>
 
     <!-- SHARED BODY — tabs swap the inner content only -->
-    <div class="add-modal-body" style="display:flex;flex-direction:column;">
+    <div class="add-modal-body">
 
       <!-- MANUAL ENTRY CONTENT -->
       <div id="entryManual" style="flex:1;">
@@ -1820,7 +1821,6 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
 
       </div>
 
-    </div>
       </div><!-- /entryManual -->
 
       <!-- AUTO ENTRY CONTENT -->
