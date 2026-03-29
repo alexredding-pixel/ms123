@@ -1087,13 +1087,14 @@ tr.selected .row-chevron { background: var(--primary-fixed); color: var(--primar
   max-height: 90vh;
   box-shadow: 0 32px 64px rgba(0,23,54,0.2);
   display: flex; flex-direction: column;
-  overflow: hidden; /* clip at modal edges, not content */
 }
 /* Only the body scrolls, not the whole modal */
 .add-modal-body {
   flex: 1;
   overflow-y: auto;
   scrollbar-width: none;
+  padding: 20px 28px;
+  min-height: 0;
 }
 .add-modal-body::-webkit-scrollbar { display: none; }
 /* Header, tabs and footer never scroll */
@@ -1110,7 +1111,6 @@ tr.selected .row-chevron { background: var(--primary-fixed); color: var(--primar
 .add-modal-header p {
   font-size: 0.8rem; color: var(--on-surface-variant); margin: 4px 0 0;
 }
-.add-modal-body { padding: 20px 28px; }
 .add-modal-footer {
   padding: 16px 28px 24px;
   border-top: 1px solid var(--surface-container-high);
@@ -1657,7 +1657,7 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
     <div class="add-modal-body">
 
       <!-- MANUAL ENTRY CONTENT -->
-      <div id="entryManual" style="flex:1;">
+      <div id="entryManual" style="">
 
       <!-- Vessel section -->
       <div class="form-section" style="position:relative;">
@@ -1824,7 +1824,7 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
       </div><!-- /entryManual -->
 
       <!-- AUTO ENTRY CONTENT -->
-      <div id="entryAuto" style="display:none;flex:1;display:none;align-items:center;justify-content:center;">
+      <div id="entryAuto" style="display:none;">
         <div style="width:100%;">
           <div class="file-drop-zone" id="blDropZone" onclick="document.getElementById('blFileInput').click()">
             <span class="material-symbols-outlined" style="font-size:44px;">upload_file</span>
@@ -1992,6 +1992,7 @@ function makeShipment(overrides) {
     loadDate: '', arriveDate: '',
     cargo: '', weight: '', pallets: '',
     carrier: '', incoterms: '', docs: {},
+    arrivedAtFinal: false,
     localCost: '', localCcy: 'USD',
     freightCost: '', freightCcy: 'USD',
     destCost: '', destCcy: 'USD',
@@ -2456,8 +2457,13 @@ function logArrivalEvent(s) {
     s.timeline.push(arrivalEvent);
   }
 
-  // Replace stale ETA with confirmed ATA
-  s.eta = 'ATA: ' + ataStr;
+  // Only replace s.eta with ATA if this is the user's final discharge port
+  // For intermediate ports, keep the booked ETA intact for the final leg
+  if (destMatchesFinal(s)) {
+    s.eta = 'ATA: ' + ataStr;
+    s.arrivedAtFinal = true;
+  }
+  // Always log the port stop in lastEtaByDest for slip tracking
 
   saveShipments();
   const delayNote = delayDays !== null
@@ -2530,7 +2536,7 @@ function refreshDetailPanel(idx) {
     if (s.speed) liveSection.innerHTML += detailRow('Speed', s.speed);
     if (s.course) liveSection.innerHTML += detailRow('Course', s.course);
     if (s.destination) liveSection.innerHTML += detailRow('AIS Destination', s.destination);
-    if (s.eta && s.eta !== 'Awaiting live data...') {
+    if (s.eta && s.eta !== 'Awaiting live data...' && !s.eta.startsWith('ATA:')) {
       const label = destMatchesFinal(s) ? 'AIS ETA (your port)' : 'AIS ETA (next port)';
       liveSection.innerHTML += detailRow(label, s.eta.replace('ETA: ', ''));
     }
@@ -2709,7 +2715,7 @@ function openDetail(idx) {
     if (s.speed) liveSection.innerHTML += detailRow('Speed', s.speed);
     if (s.course) liveSection.innerHTML += detailRow('Course', s.course);
     if (s.destination) liveSection.innerHTML += detailRow('AIS Destination', s.destination);
-    if (s.eta && s.eta !== 'Awaiting live data...') {
+    if (s.eta && s.eta !== 'Awaiting live data...' && !s.eta.startsWith('ATA:')) {
       const label = destMatchesFinal(s) ? 'AIS ETA (your port)' : 'AIS ETA (next port)';
       liveSection.innerHTML += detailRow(label, s.eta.replace('ETA: ', ''));
     }
@@ -2903,34 +2909,35 @@ function destMatchesFinal(s) {
 }
 
 function getDisplayEta(s) {
-  // If vessel has actually arrived (ATA logged), show that instead of any ETA
-  if (s.eta && s.eta.startsWith('ATA:')) {
-    return s.eta; // e.g. "ATA: 28 Mar 07:02"
+  // ATA at the FINAL discharge port — show it
+  if (s.eta && s.eta.startsWith('ATA:') && s.arrivedAtFinal) {
+    return s.eta;
   }
 
-  const hasAisEta = s.eta && s.eta !== 'Awaiting live data...';
+  const hasAisEta = s.eta && s.eta !== 'Awaiting live data...' && !s.eta.startsWith('ATA:');
 
-  // If AIS is currently showing ETA to the final discharge port, use it directly
+  // AIS ETA directly to the final discharge port — most accurate
   if (hasAisEta && destMatchesFinal(s)) {
     return s.eta.replace('ETA: ', '');
   }
 
-  // Booked date + accumulated slip
+  // Booked date + slip — covers intermediate port delays cascading to final ETA
   if (s.revisedEta) return s.revisedEta;
   if (s.arriveDate)  return s.arriveDate;
 
-  // Fall back to raw AIS ETA for intermediate port
+  // Intermediate port AIS ETA — least meaningful for final delivery
   if (hasAisEta) return s.eta.replace('ETA: ', '');
   return null;
 }
 
 function etaSource(s) {
-  if (s.eta && s.eta.startsWith('ATA:'))  return 'ata';       // actual arrival
-  const hasAisEta = s.eta && s.eta !== 'Awaiting live data...';
-  if (hasAisEta && destMatchesFinal(s))   return 'ais-final'; // AIS to discharge port
-  if (s.revisedEta)                       return 'revised';   // booked + slip
-  if (s.arriveDate)                        return 'booked';   // user's original date
-  if (hasAisEta)                           return 'ais-next'; // AIS to intermediate port
+  // ATA only shown when arrived at the actual final discharge port
+  if (s.eta && s.eta.startsWith('ATA:') && s.arrivedAtFinal) return 'ata';
+  const hasAisEta = s.eta && s.eta !== 'Awaiting live data...' && !s.eta.startsWith('ATA:');
+  if (hasAisEta && destMatchesFinal(s))   return 'ais-final';
+  if (s.revisedEta)                       return 'revised';
+  if (s.arriveDate)                        return 'booked';
+  if (hasAisEta)                           return 'ais-next';
   return 'none';
 }
 
@@ -4424,15 +4431,6 @@ window.addEventListener('load', () => {
   document.getElementById('blFileInput').addEventListener('change', (e) => {
     if (e.target.files[0]) handleBlFile(e.target.files[0]);
   });
-  document.getElementById('submitAutoEntry').addEventListener('click', () => {
-    if (!blFileData) {
-      document.getElementById('blDropZone').style.borderColor = 'var(--error)';
-      return;
-    }
-    // Placeholder — parse functionality added later
-    alert('B/L parsing coming soon. Switch to Manual Entry to add fields now.');
-  });
-
   // Drag and drop on drop zone
   const dropZone = document.getElementById('blDropZone');
   dropZone.addEventListener('dragover',  (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
