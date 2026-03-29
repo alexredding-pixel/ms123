@@ -2093,6 +2093,15 @@ async function syncShipmentsFromSupabase() {
     localStorage.setItem('ms_shipments_cache', JSON.stringify(rows.map(r => r.data)));
     VESSEL_REGISTRY = buildRegistry();
     TRACKED_MMSIS   = Object.keys(VESSEL_REGISTRY);
+    // Migrate: if s.eta is an intermediate ATA (arrivedAtFinal not set), clear it
+    // so the booked/revised ETA shows correctly as the final destination ETA
+    shipments.forEach(s => {
+      if (s.eta && s.eta.startsWith('ATA:') && !s.arrivedAtFinal) {
+        // Store it as the last port stop note instead
+        s.lastPortStop = s.eta.replace('ATA: ', '');
+        s.eta = 'Awaiting live data...';
+      }
+    });
     renderTable();
     renderAlerts();
     console.log('[sb] Synced ' + shipments.length + ' shipments from Supabase');
@@ -2525,7 +2534,7 @@ function refreshDetailPanel(idx) {
         ? ' <span style="font-size:0.5625rem;font-weight:800;background:rgba(186,26,26,0.1);color:var(--error);padding:2px 6px;border-radius:4px;">' + (s.slipDays > 0 ? '+' + s.slipDays + 'd SLIP' : s.slipDays + 'd') + '</span>'
         : etaSrc === 'ais-next'
           ? ' <span style="font-size:0.5625rem;font-weight:800;background:rgba(0,23,54,0.08);color:var(--on-surface-variant);padding:2px 6px;border-radius:4px;">NEXT PORT</span>'
-          : '';
+          : ' <span style="font-size:0.5625rem;font-weight:800;background:rgba(0,23,54,0.06);color:var(--on-surface-variant);padding:2px 6px;border-radius:4px;">BOOKED</span>';
   document.getElementById('dpEta').innerHTML = displayEta + etaBadge;
 
 
@@ -2536,6 +2545,9 @@ function refreshDetailPanel(idx) {
     if (s.speed) liveSection.innerHTML += detailRow('Speed', s.speed);
     if (s.course) liveSection.innerHTML += detailRow('Course', s.course);
     if (s.destination) liveSection.innerHTML += detailRow('AIS Destination', s.destination);
+    if (s.lastPortStop) {
+      liveSection.innerHTML += detailRow('Last port stop', s.lastPortStop);
+    }
     if (s.eta && s.eta !== 'Awaiting live data...' && !s.eta.startsWith('ATA:')) {
       const label = destMatchesFinal(s) ? 'AIS ETA (your port)' : 'AIS ETA (next port)';
       liveSection.innerHTML += detailRow(label, s.eta.replace('ETA: ', ''));
@@ -2692,7 +2704,7 @@ function openDetail(idx) {
         ? ' <span style="font-size:0.5625rem;font-weight:800;background:rgba(186,26,26,0.1);color:var(--error);padding:2px 6px;border-radius:4px;">' + (s.slipDays > 0 ? '+' + s.slipDays + 'd SLIP' : s.slipDays + 'd') + '</span>'
         : etaSrc === 'ais-next'
           ? ' <span style="font-size:0.5625rem;font-weight:800;background:rgba(0,23,54,0.08);color:var(--on-surface-variant);padding:2px 6px;border-radius:4px;">NEXT PORT</span>'
-          : '';
+          : ' <span style="font-size:0.5625rem;font-weight:800;background:rgba(0,23,54,0.06);color:var(--on-surface-variant);padding:2px 6px;border-radius:4px;">BOOKED</span>';
   document.getElementById('dpEta').innerHTML = displayEta + etaBadge;
 
   document.getElementById('dpCargo').textContent = s.cargo || '--';
