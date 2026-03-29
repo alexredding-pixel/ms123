@@ -92,7 +92,7 @@ body.dark-mode {
   color: var(--on-surface);
 }
 body.dark-mode .sidebar        { background: #111926; border-right: 1px solid #1f2a3e; }
-body.dark-mode .topbar         { background: #111926; border-bottom-color: #1f2a3e; }
+body.dark-mode .topbar  { background: #0c0e0f; border-bottom-color: #1f2a3e; }
 body.dark-mode .alerts-panel   { background: #1a2d4a; }
 body.dark-mode .table-card     { background: var(--surface-container-low); }
 body.dark-mode .search-wrap    { background: var(--surface-container-high); }
@@ -253,7 +253,8 @@ html, body {
   display: flex; align-items: center; gap: 6px;
   font-size: 0.875rem; font-weight: 700; color: var(--primary);
   cursor: pointer; padding: 8px 12px; border-radius: 10px;
-  transition: background 0.15s; border: none; background: transparent; font-family: inherit;
+  transition: background 0.15s; border: none;
+  background: transparent; font-family: inherit;
 }
 .fleet-selector:hover { background: var(--surface-container-high); }
 .fleet-selector .material-symbols-outlined { font-size: 18px; }
@@ -293,6 +294,7 @@ html, body {
   position: absolute; inset: 0;
   z-index: 2;
   border-radius: 24px;
+
   opacity: 1;
   transition: opacity 0.4s;
   pointer-events: all;
@@ -357,6 +359,7 @@ html, body {
   overflow: hidden; position: relative;
   height: 420px;
 }
+
 
 .map-bg {
   position: absolute; inset: 0;
@@ -993,6 +996,83 @@ tr.selected .row-chevron { background: var(--primary-fixed); color: var(--primar
   background: var(--primary); color: white; border-color: var(--primary);
 }
 
+/* ── MODAL TABS ──────────────────────────── */
+.modal-tabs {
+  display: flex; gap: 4px;
+  background: var(--surface-container-high);
+  border-radius: 12px; padding: 4px;
+  margin: 16px 28px 0;
+  flex-shrink: 0;
+}
+.modal-tab {
+  flex: 1; padding: 8px 12px; border-radius: 9px;
+  border: none; background: transparent; cursor: pointer;
+  font-size: 0.8125rem; font-weight: 700; font-family: inherit;
+  color: var(--on-surface-variant); transition: all 0.15s;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+}
+.modal-tab .material-symbols-outlined { font-size: 16px; }
+.modal-tab.active {
+  background: var(--surface-container-lowest);
+  color: var(--primary);
+  box-shadow: 0 1px 4px rgba(0,23,54,0.1);
+}
+
+/* ── FILE UPLOAD ZONE ────────────────────── */
+.file-drop-zone {
+  border: 2px dashed var(--outline-variant);
+  border-radius: 14px; padding: 36px 24px;
+  text-align: center; cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.file-drop-zone:hover, .file-drop-zone.drag-over {
+  border-color: var(--primary);
+  background: var(--primary-fixed);
+}
+.file-drop-zone .material-symbols-outlined {
+  font-size: 40px; color: var(--outline);
+  display: block; margin-bottom: 12px;
+}
+.file-drop-zone.drag-over .material-symbols-outlined { color: var(--primary); }
+.file-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--surface-container-low);
+  border: 1px solid var(--outline-variant);
+  border-radius: 8px; padding: 6px 10px;
+  font-size: 0.8125rem; font-weight: 600; color: var(--on-surface);
+  margin: 4px;
+}
+.file-chip .material-symbols-outlined { font-size: 16px; color: var(--secondary); }
+.file-chip-remove {
+  background: none; border: none; cursor: pointer; padding: 0;
+  color: var(--outline); font-size: 14px; line-height: 1;
+  margin-left: 2px; display: flex; align-items: center;
+}
+.file-chip-remove:hover { color: var(--error); }
+
+/* ── DETAIL PANEL FILES ──────────────────── */
+.files-section { margin-top: 4px; }
+.file-upload-btn {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 10px 14px; border-radius: 10px;
+  border: 1.5px dashed var(--outline-variant);
+  background: transparent; cursor: pointer; font-family: inherit;
+  font-size: 0.8125rem; font-weight: 600; color: var(--on-surface-variant);
+  transition: all 0.15s; margin-bottom: 8px;
+}
+.file-upload-btn:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-fixed); }
+.file-upload-btn .material-symbols-outlined { font-size: 18px; }
+.doc-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px; border-radius: 10px;
+  background: var(--surface-container-low); margin-bottom: 6px;
+}
+.doc-row .material-symbols-outlined { font-size: 20px; color: var(--secondary); flex-shrink: 0; }
+.doc-name { flex: 1; font-size: 0.8125rem; font-weight: 600; color: var(--on-surface); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.doc-type { font-size: 0.625rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--on-surface-variant); }
+.doc-action { background: none; border: none; cursor: pointer; padding: 4px; color: var(--outline); border-radius: 6px; display: flex; align-items: center; }
+.doc-action:hover { background: var(--surface-container-high); color: var(--primary); }
+
 /* ── ADD SHIPMENT MODAL ──────────────────── */
 .add-modal-backdrop {
   position: fixed; inset: 0; z-index: 200;
@@ -1003,10 +1083,22 @@ tr.selected .row-chevron { background: var(--primary-fixed); color: var(--primar
 .add-modal {
   background: var(--surface-container-lowest);
   border-radius: 20px; width: 560px; max-width: 95vw;
-  max-height: 90vh; overflow-y: auto;
+  max-height: 90vh;
   box-shadow: 0 32px 64px rgba(0,23,54,0.2);
   display: flex; flex-direction: column;
+  overflow: hidden; /* clip at modal edges, not content */
 }
+/* Only the body scrolls, not the whole modal */
+.add-modal-body {
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.add-modal-body::-webkit-scrollbar { display: none; }
+/* Header, tabs and footer never scroll */
+.add-modal-header { flex-shrink: 0; }
+.modal-tabs       { flex-shrink: 0; }
+.add-modal-footer { flex-shrink: 0; }
 .add-modal-header {
   padding: 24px 28px 0;
   display: flex; align-items: flex-start; justify-content: space-between;
@@ -1017,7 +1109,7 @@ tr.selected .row-chevron { background: var(--primary-fixed); color: var(--primar
 .add-modal-header p {
   font-size: 0.8rem; color: var(--on-surface-variant); margin: 4px 0 0;
 }
-.add-modal-body { padding: 20px 28px; flex: 1; }
+.add-modal-body { padding: 20px 28px; }
 .add-modal-footer {
   padding: 16px 28px 24px;
   border-top: 1px solid var(--surface-container-high);
@@ -1224,7 +1316,7 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
           <div>
             <div class="map-stat-label">
               <span class="material-symbols-outlined">language</span>
-              Fleet Overview
+              Overview
             </div>
             <div class="map-big-num" id="fleetCount">--</div>
             <div style="font-size:.75rem;color:var(--primary);font-weight:700;margin-bottom:10px;">Vessels Tracked</div>
@@ -1473,7 +1565,8 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
   <div class="detail-header">
     <div>
       <div class="container-id-big" id="dpId">MS-49210-TX</div>
-      <div class="vessel-sub" id="dpVessel">EVER GIVEN · ARRIVED</div>
+      <div class="vessel-sub" id="dpVessel">EVER GIVEN</div>
+      <div id="dpStatus" style="font-size:0.75rem;font-weight:700;letter-spacing:0.08em;color:var(--on-surface-variant);margin-top:3px;text-transform:uppercase;"></div>
     </div>
     <button class="close-btn" onclick="closeDetail()">
       <span class="material-symbols-outlined">close</span>
@@ -1503,6 +1596,7 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
         <span class="label">Weight</span>
         <span class="value" id="dpWeight">—</span>
       </div>
+      <div id="dpExtraInfo"></div>
     </div>
 
     <div class="detail-section">
@@ -1511,9 +1605,19 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
         <!-- Populated by JS -->
       </div>
     </div>
+
+    <div class="detail-section files-section">
+      <div class="detail-section-title">Documents</div>
+      <div id="dpDocsList"></div>
+      <div style="display:flex;flex-direction:column;gap:6px;" id="dpDocUploadBtns"></div>
+      <input type="file" id="docFileInput" accept=".pdf" style="display:none;"/>
+    </div>
   </div>
   <div class="detail-footer">
     <button class="detail-btn-primary" id="trackOnMapBtn">Track on Map</button>
+    <button class="detail-btn-secondary" id="editShipmentBtn" title="Edit shipment details">
+      <span class="material-symbols-outlined" style="font-size:18px;vertical-align:middle">edit</span>
+    </button>
     <button class="detail-btn-secondary" id="markArrivedBtn" title="Mark as arrived — moves to Log">
       <span class="material-symbols-outlined" style="font-size:18px;vertical-align:middle">check_circle</span>
     </button>
@@ -1535,7 +1639,24 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
         <span class="material-symbols-outlined">close</span>
       </button>
     </div>
-    <div class="add-modal-body">
+
+    <!-- Entry mode tabs (hidden in edit mode) -->
+    <div class="modal-tabs" id="entryModeTabs">
+      <button class="modal-tab active" id="tabManual" onclick="switchEntryTab('manual')">
+        <span class="material-symbols-outlined">edit_note</span>
+        Manual Entry
+      </button>
+      <button class="modal-tab" id="tabAuto" onclick="switchEntryTab('auto')">
+        <span class="material-symbols-outlined">auto_awesome</span>
+        Auto Entry
+      </button>
+    </div>
+
+    <!-- SHARED BODY — tabs swap the inner content only -->
+    <div class="add-modal-body" style="display:flex;flex-direction:column;">
+
+      <!-- MANUAL ENTRY CONTENT -->
+      <div id="entryManual" style="flex:1;">
 
       <!-- Vessel section -->
       <div class="form-section" style="position:relative;">
@@ -1586,19 +1707,149 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
             <input type="date" id="f-arrive-date"/>
           </div>
         </div>
+        <!-- Container type + carrier on same row -->
         <div class="form-row">
           <div class="form-group">
-            <label>Cargo Description</label>
-            <input type="text" id="f-cargo" placeholder="e.g. Steel coils, 24 pallets"/>
+            <label>Container Type</label>
+            <select id="f-cargo">
+              <option value="">Select...</option>
+              <option value="40'">40'</option>
+              <option value="20'">20'</option>
+              <option value="LCL">LCL</option>
+            </select>
           </div>
           <div class="form-group">
+            <label>Carrier</label>
+            <select id="f-carrier">
+              <option value="">Select...</option>
+              <option value="MSC">MSC</option>
+              <option value="Maersk">Maersk</option>
+              <option value="CMA CGM">CMA CGM</option>
+              <option value="COSCO">COSCO</option>
+              <option value="Hapag-Lloyd">Hapag-Lloyd</option>
+              <option value="ONE">ONE</option>
+              <option value="ZIM">ZIM</option>
+            </select>
+          </div>
+        </div>
+        <!-- Incoterms -->
+        <div class="form-row single">
+          <div class="form-group">
+            <label>Incoterms</label>
+            <select id="f-incoterms" onchange="handleIncotermsChange(this.value)">
+              <option value="">Select...</option>
+              <option value="EXW">EXW — Ex Works</option>
+              <option value="FCA">FCA — Free Carrier</option>
+              <option value="FOB">FOB — Free On Board</option>
+              <option value="CFR">CFR — Cost &amp; Freight</option>
+              <option value="CIF">CIF — Cost, Insurance &amp; Freight</option>
+              <option value="CPT">CPT — Carriage Paid To</option>
+              <option value="DAP">DAP — Delivered At Place</option>
+            </select>
+          </div>
+        </div>
+        <!-- Weight + Pallets -->
+        <div class="form-row">
+          <div class="form-group">
             <label>Weight</label>
-            <input type="text" id="f-weight" placeholder="e.g. 18,000 kg"/>
+            <div style="position:relative;width:100%;">
+              <input type="number" id="f-weight" placeholder="0" style="width:100%;padding-right:40px;box-sizing:border-box;"/>
+              <span style="position:absolute;right:14px;top:50%;transform:translateY(-50%);font-size:0.8125rem;font-weight:700;color:var(--outline);pointer-events:none;">kg</span>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Pallets</label>
+            <input type="number" id="f-pallets" placeholder="0" min="0" step="1"/>
           </div>
         </div>
       </div>
 
+      <div class="form-divider"></div>
+
+      <!-- Cost section -->
+      <div class="form-section">
+        <div class="form-section-title">Costs</div>
+
+        <!-- Local Cost -->
+        <div class="form-row" style="grid-template-columns:120px 1fr;">
+          <div class="form-group">
+            <label>Currency</label>
+            <select id="f-local-ccy">
+              <option value="USD">USD $</option>
+              <option value="GBP">GBP £</option>
+              <option value="EUR">EUR €</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Local Cost (origin charges)</label>
+            <input type="number" id="f-local-cost" placeholder="0.00" min="0" step="0.01"/>
+          </div>
+        </div>
+
+        <!-- Sea Freight -->
+        <div class="form-row" style="grid-template-columns:120px 1fr;">
+          <div class="form-group">
+            <label>Currency</label>
+            <select id="f-freight-ccy">
+              <option value="USD">USD $</option>
+              <option value="GBP">GBP £</option>
+              <option value="EUR">EUR €</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Sea Freight</label>
+            <input type="number" id="f-freight-cost" placeholder="0.00" min="0" step="0.01"/>
+          </div>
+        </div>
+
+        <!-- Destination Clearance / Delivery -->
+        <div class="form-row" style="grid-template-columns:120px 1fr;">
+          <div class="form-group">
+            <label>Currency</label>
+            <select id="f-dest-ccy">
+              <option value="USD">USD $</option>
+              <option value="GBP">GBP £</option>
+              <option value="EUR">EUR €</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Destination Clearance &amp; Delivery</label>
+            <input type="number" id="f-dest-cost" placeholder="0.00" min="0" step="0.01"/>
+          </div>
+        </div>
+
+      </div>
+
     </div>
+      </div><!-- /entryManual -->
+
+      <!-- AUTO ENTRY CONTENT -->
+      <div id="entryAuto" style="display:none;flex:1;display:none;align-items:center;justify-content:center;">
+        <div style="width:100%;">
+          <div class="file-drop-zone" id="blDropZone" onclick="document.getElementById('blFileInput').click()">
+            <span class="material-symbols-outlined" style="font-size:44px;">upload_file</span>
+            <div style="font-size:0.9375rem;font-weight:700;color:var(--on-surface);margin-bottom:4px;">Drop Bill of Lading here</div>
+            <div style="font-size:0.8125rem;color:var(--on-surface-variant);">or click to browse &mdash; PDF only</div>
+            <input type="file" id="blFileInput" accept=".pdf" style="display:none;"/>
+          </div>
+          <div id="blFileChosen" style="display:none;margin-top:12px;">
+            <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--surface-container-low);border-radius:12px;border:1px solid var(--outline-variant);">
+              <span class="material-symbols-outlined" style="color:var(--secondary);font-size:24px;">picture_as_pdf</span>
+              <div style="flex:1;min-width:0;">
+                <div id="blFileName" style="font-size:0.875rem;font-weight:700;color:var(--on-surface);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">filename.pdf</div>
+                <div id="blFileSize" style="font-size:0.75rem;color:var(--on-surface-variant);margin-top:2px;"></div>
+              </div>
+              <button onclick="clearBlFile()" style="background:none;border:none;cursor:pointer;padding:4px;color:var(--outline);display:flex;align-items:center;">
+                <span class="material-symbols-outlined" style="font-size:18px;">close</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div><!-- /entryAuto -->
+
+    </div><!-- /shared add-modal-body -->
+
+    <!-- SHARED FOOTER — always at bottom, buttons swap based on tab -->
     <div class="add-modal-footer">
       <button class="btn-secondary" id="cancelAddModal">Cancel</button>
       <button class="btn-primary" id="submitAddShipment">Add Shipment</button>
@@ -1739,7 +1990,11 @@ function makeShipment(overrides) {
     id: '', vessel: '', mmsi: '',
     origin: '', dest: '',
     loadDate: '', arriveDate: '',
-    cargo: '', weight: '',
+    cargo: '', weight: '', pallets: '',
+    carrier: '', incoterms: '', docs: {},
+    localCost: '', localCcy: 'USD',
+    freightCost: '', freightCcy: 'USD',
+    destCost: '', destCcy: 'USD',
     // AIS live fields (populated by WebSocket)
     status: 'In Transit', // default until AIS updates
     lat: null, lng: null, speed: null, course: null,
@@ -1783,7 +2038,12 @@ function shipmentToRow(s) {
       id: s.id, vessel: s.vessel, mmsi: s.mmsi,
       origin: s.origin, dest: s.dest, mode: s.mode || 'sea',
       loadDate: s.loadDate, arriveDate: s.arriveDate,
-      cargo: s.cargo, weight: s.weight, timeline: s.timeline,
+      cargo: s.cargo, weight: s.weight, pallets: s.pallets,
+      carrier: s.carrier, incoterms: s.incoterms || '',
+      localCost: s.localCost, localCcy: s.localCcy,
+      freightCost: s.freightCost, freightCcy: s.freightCcy,
+      destCost: s.destCost, destCcy: s.destCcy,
+      timeline: s.timeline,
       status: s.status, lat: s.lat, lng: s.lng,
       speed: s.speed, course: s.course,
       destination: s.destination, eta: s.eta,
@@ -2001,9 +2261,19 @@ function handleAISMessage(msg) {
     s.speed = pr.Sog != null ? pr.Sog.toFixed(1) + ' kn' : s.speed;
     s.course = pr.Cog != null ? Math.round(pr.Cog) + ' deg' : s.course;
     const navCode = pr.NavigationalStatus;
+    const prevStatus = s.status;
     if (navCode != null) s.status = NAV_STATUS[navCode] || s.status;
+
+    // Detect arrival: vessel transitions to moored/anchored at low speed
+    const nowInPort = (s.status === 'In Port' || s.status === 'At Anchor')
+      && pr.Sog != null && pr.Sog < 0.5;
+    const wasUnderway = prevStatus === 'In Transit';
+    if (nowInPort && wasUnderway && s.destination) {
+      logArrivalEvent(s);
+    }
+
     s.lastUpdate = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-    s.lastUpdateTs = Date.now(); // full timestamp for staleness check
+    s.lastUpdateTs = Date.now();
     updateRow(vessel.idx);
     updateMapDot(vessel.idx, s.lat, s.lng);
     if (activeId === vessel.idx) refreshDetailPanel(vessel.idx);
@@ -2131,6 +2401,71 @@ function freezeWaypointSlip(s, oldDest) {
   console.log('[slip] Froze ' + slipMs/3600000 + 'h slip from ' + oldDest + ' total frozen: ' + s.frozenSlipMs/3600000 + 'h');
 }
 
+// -- ARRIVAL EVENT LOGGING ---------------------------------------------------
+function logArrivalEvent(s) {
+  const dest = s.destination || 'port';
+  const portName = titleCase(dest);
+  const now = new Date();
+  const ataStr = now.toLocaleDateString('en-GB', {day:'2-digit', month:'short'})
+    + ' ' + now.toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
+
+  // Avoid duplicate arrival events for the same destination
+  const alreadyLogged = (s.timeline || []).some(t =>
+    t.isArrival && t.event &&
+    t.event.toUpperCase().includes(dest.slice(0, 4).toUpperCase())
+  );
+  if (alreadyLogged) return;
+
+  // Capture the last ETA we had for this destination before replacing it
+  const destKey = dest.toUpperCase();
+  const lastEta = (s.lastEtaByDest && s.lastEtaByDest[destKey])
+    || (s.firstEtas && s.firstEtas[destKey])
+    || (s.eta && !s.eta.startsWith('ATA:') ? s.eta.replace('ETA: ', '') : null);
+
+  // Calculate delay vs first predicted ETA
+  let delayDays = null;
+  if (lastEta && s.firstEtas && s.firstEtas[destKey]) {
+    const first = parseEtaDate(s.firstEtas[destKey]);
+    if (first) {
+      const delayMs = now - first;
+      delayDays = Math.round(delayMs / 86400000);
+    }
+  }
+
+  // Build the arrival timeline event with full ETA vs ATA data
+  const arrivalEvent = {
+    event:      'Arrived at ' + portName,
+    time:       ataStr + ' (ATA)',
+    state:      'done',
+    isArrival:  true,
+    ata:        ataStr,
+    eta:        lastEta || null,   // predicted ETA at this port
+    delayDays:  delayDays,         // positive = late, negative = early, 0 = on time
+  };
+
+  // Update any existing pending "Arrive" event, or insert fresh
+  let matched = false;
+  (s.timeline || []).forEach(t => {
+    if (t.state === 'pending' && t.event && t.event.toLowerCase().includes('arriv')) {
+      Object.assign(t, arrivalEvent);
+      matched = true;
+    }
+  });
+  if (!matched) {
+    s.timeline = s.timeline || [];
+    s.timeline.push(arrivalEvent);
+  }
+
+  // Replace stale ETA with confirmed ATA
+  s.eta = 'ATA: ' + ataStr;
+
+  saveShipments();
+  const delayNote = delayDays !== null
+    ? (delayDays === 0 ? ' (on time)' : delayDays > 0 ? ' (+' + delayDays + 'd late)' : ' (' + Math.abs(delayDays) + 'd early)')
+    : '';
+  console.log('[arrival] ' + s.vessel + ' at ' + portName + delayNote);
+}
+
 // -- DOM HELPERS ---------------------------------------------------------------
 function updateRow(idx) {
   const s = shipments[idx];
@@ -2171,8 +2506,22 @@ function updateRow(idx) {
 
 function refreshDetailPanel(idx) {
   const s = shipments[idx];
-  document.getElementById('dpVessel').textContent = `${s.vessel} . ${s.status.toUpperCase()}`;
-  document.getElementById('dpEta').textContent = s.eta;
+  document.getElementById('dpVessel').textContent = s.vessel;
+  document.getElementById('dpStatus') && (document.getElementById('dpStatus').textContent = s.status.toUpperCase());
+  // Show the best available ETA for the final destination (same logic as table column)
+  const displayEta = getDisplayEta(s) || s.eta || '—';
+  const etaSrc     = etaSource(s);
+  const etaBadge   = etaSrc === 'ata'
+    ? ' <span style="font-size:0.5625rem;font-weight:800;background:rgba(12,82,22,0.15);color:var(--on-tertiary-fixed-variant);padding:2px 6px;border-radius:4px;">ATA</span>'
+    : etaSrc === 'ais-final'
+      ? ' <span style="font-size:0.5625rem;font-weight:800;background:rgba(12,82,22,0.12);color:var(--on-tertiary-fixed-variant);padding:2px 6px;border-radius:4px;">AIS</span>'
+      : etaSrc === 'revised'
+        ? ' <span style="font-size:0.5625rem;font-weight:800;background:rgba(186,26,26,0.1);color:var(--error);padding:2px 6px;border-radius:4px;">' + (s.slipDays > 0 ? '+' + s.slipDays + 'd SLIP' : s.slipDays + 'd') + '</span>'
+        : etaSrc === 'ais-next'
+          ? ' <span style="font-size:0.5625rem;font-weight:800;background:rgba(0,23,54,0.08);color:var(--on-surface-variant);padding:2px 6px;border-radius:4px;">NEXT PORT</span>'
+          : '';
+  document.getElementById('dpEta').innerHTML = displayEta + etaBadge;
+
 
   // Inject live fields if available
   const liveSection = document.getElementById('dpLiveData');
@@ -2181,6 +2530,10 @@ function refreshDetailPanel(idx) {
     if (s.speed) liveSection.innerHTML += detailRow('Speed', s.speed);
     if (s.course) liveSection.innerHTML += detailRow('Course', s.course);
     if (s.destination) liveSection.innerHTML += detailRow('AIS Destination', s.destination);
+    if (s.eta && s.eta !== 'Awaiting live data...') {
+      const label = destMatchesFinal(s) ? 'AIS ETA (your port)' : 'AIS ETA (next port)';
+      liveSection.innerHTML += detailRow(label, s.eta.replace('ETA: ', ''));
+    }
 
     if (s.lastUpdate) liveSection.innerHTML += detailRow('Last Update', s.lastUpdate);
     // Dead reckoning estimate
@@ -2215,16 +2568,41 @@ function refreshDetailPanel(idx) {
   // Re-render timeline so AIS ETA badge and updated times show immediately
   const tl = document.getElementById('dpTimeline');
   if (tl) {
-    tl.innerHTML = s.timeline.map(t => `
-      <div class="timeline-item">
-        <div class="timeline-dot ${t.state}"></div>
-        <div class="timeline-event">${t.event}</div>
-        <div class="timeline-time">
-          ${t.time || 'TBC'}
-          ${t.aisEta ? '<span style="margin-left:6px;font-size:0.5625rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;background:var(--primary-fixed);color:var(--on-primary-fixed);padding:2px 6px;border-radius:4px;">AIS</span>' : ''}
-        </div>
-      </div>
-    `).join('');
+    tl.innerHTML = s.timeline.map(t => {
+      // Build the time/badge line
+      let timeHtml = t.time || 'TBC';
+      if (t.aisEta && !t.isArrival) {
+        timeHtml += ' <span style="margin-left:6px;font-size:0.5625rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;background:var(--primary-fixed);color:var(--on-primary-fixed);padding:2px 6px;border-radius:4px;">AIS</span>';
+      }
+
+      // For arrival events: show ETA vs ATA comparison
+      let comparisonHtml = '';
+      if (t.isArrival && t.eta) {
+        const delayDays = t.delayDays;
+        let delayBadge = '';
+        if (delayDays !== null && delayDays !== undefined) {
+          if (delayDays === 0) {
+            delayBadge = ' <span style="font-size:0.5625rem;font-weight:800;background:rgba(12,82,22,0.12);color:var(--on-tertiary-fixed-variant);padding:2px 6px;border-radius:4px;">ON TIME</span>';
+          } else if (delayDays > 0) {
+            delayBadge = ' <span style="font-size:0.5625rem;font-weight:800;background:var(--error-container);color:var(--on-error-container);padding:2px 6px;border-radius:4px;">+' + delayDays + 'd LATE</span>';
+          } else {
+            delayBadge = ' <span style="font-size:0.5625rem;font-weight:800;background:rgba(12,82,22,0.12);color:var(--on-tertiary-fixed-variant);padding:2px 6px;border-radius:4px;">' + Math.abs(delayDays) + 'd EARLY</span>';
+          }
+        }
+        comparisonHtml = '<div style="margin-top:4px;font-size:0.6875rem;color:var(--on-surface-variant);">'
+          + 'ETA was: ' + t.eta + delayBadge
+          + '</div>';
+      }
+
+      return '<div class="timeline-item">'
+        + '<div class="timeline-dot ' + t.state + '"></div>'
+        + '<div style="flex:1;min-width:0;">'
+        + '<div class="timeline-event">' + t.event + '</div>'
+        + '<div class="timeline-time">' + timeHtml + '</div>'
+        + comparisonHtml
+        + '</div>'
+        + '</div>';
+    }).join('');
   }
 }
 
@@ -2293,11 +2671,35 @@ function openDetail(idx) {
   });
 
   document.getElementById('dpId').textContent = s.id;
-  document.getElementById('dpVessel').textContent = `${s.vessel} . ${s.status.toUpperCase()}`;
+  document.getElementById('dpVessel').textContent = s.vessel;
+  document.getElementById('dpStatus') && (document.getElementById('dpStatus').textContent = s.status.toUpperCase());
   document.getElementById('dpOrigin').textContent = s.origin;
   document.getElementById('dpDest').textContent = s.dest;
-  document.getElementById('dpEta').textContent = s.eta;
+  // Show the best available ETA for the final destination (same logic as table column)
+  const displayEta = getDisplayEta(s) || s.eta || '—';
+  const etaSrc     = etaSource(s);
+  const etaBadge   = etaSrc === 'ata'
+    ? ' <span style="font-size:0.5625rem;font-weight:800;background:rgba(12,82,22,0.15);color:var(--on-tertiary-fixed-variant);padding:2px 6px;border-radius:4px;">ATA</span>'
+    : etaSrc === 'ais-final'
+      ? ' <span style="font-size:0.5625rem;font-weight:800;background:rgba(12,82,22,0.12);color:var(--on-tertiary-fixed-variant);padding:2px 6px;border-radius:4px;">AIS</span>'
+      : etaSrc === 'revised'
+        ? ' <span style="font-size:0.5625rem;font-weight:800;background:rgba(186,26,26,0.1);color:var(--error);padding:2px 6px;border-radius:4px;">' + (s.slipDays > 0 ? '+' + s.slipDays + 'd SLIP' : s.slipDays + 'd') + '</span>'
+        : etaSrc === 'ais-next'
+          ? ' <span style="font-size:0.5625rem;font-weight:800;background:rgba(0,23,54,0.08);color:var(--on-surface-variant);padding:2px 6px;border-radius:4px;">NEXT PORT</span>'
+          : '';
+  document.getElementById('dpEta').innerHTML = displayEta + etaBadge;
+
   document.getElementById('dpCargo').textContent = s.cargo || '--';
+  // Show carrier, pallets, and costs if present
+  const dpExtra = document.getElementById('dpExtraInfo');
+  if (dpExtra) {
+    let extraHtml = '';
+    if (s.incoterms) extraHtml += detailRow('Incoterms', s.incoterms);
+    if (s.carrier) extraHtml += detailRow('Carrier', s.carrier);
+    if (s.pallets) extraHtml += detailRow('Pallets', s.pallets);
+    // Costs are shown in the Log, not here
+    dpExtra.innerHTML = extraHtml;
+  }
   document.getElementById('dpWeight').textContent = s.weight;
 
   // Live data section
@@ -2307,6 +2709,10 @@ function openDetail(idx) {
     if (s.speed) liveSection.innerHTML += detailRow('Speed', s.speed);
     if (s.course) liveSection.innerHTML += detailRow('Course', s.course);
     if (s.destination) liveSection.innerHTML += detailRow('AIS Destination', s.destination);
+    if (s.eta && s.eta !== 'Awaiting live data...') {
+      const label = destMatchesFinal(s) ? 'AIS ETA (your port)' : 'AIS ETA (next port)';
+      liveSection.innerHTML += detailRow(label, s.eta.replace('ETA: ', ''));
+    }
 
     if (s.lastUpdate) liveSection.innerHTML += detailRow('Last AIS Update', s.lastUpdate);
   }
@@ -2497,30 +2903,34 @@ function destMatchesFinal(s) {
 }
 
 function getDisplayEta(s) {
+  // If vessel has actually arrived (ATA logged), show that instead of any ETA
+  if (s.eta && s.eta.startsWith('ATA:')) {
+    return s.eta; // e.g. "ATA: 28 Mar 07:02"
+  }
+
   const hasAisEta = s.eta && s.eta !== 'Awaiting live data...';
 
-  // If AIS is currently showing ETA to the final discharge port, use it directly —
-  // it's more accurate than booked date + slip estimate
+  // If AIS is currently showing ETA to the final discharge port, use it directly
   if (hasAisEta && destMatchesFinal(s)) {
     return s.eta.replace('ETA: ', '');
   }
 
-  // Otherwise use revised ETA (booked date + accumulated slip)
+  // Booked date + accumulated slip
   if (s.revisedEta) return s.revisedEta;
   if (s.arriveDate)  return s.arriveDate;
 
-  // Fall back to raw AIS ETA (intermediate port — less meaningful for final delivery)
+  // Fall back to raw AIS ETA for intermediate port
   if (hasAisEta) return s.eta.replace('ETA: ', '');
   return null;
 }
 
 function etaSource(s) {
-  // Returns a label describing where the ETA came from — for display in the table
+  if (s.eta && s.eta.startsWith('ATA:'))  return 'ata';       // actual arrival
   const hasAisEta = s.eta && s.eta !== 'Awaiting live data...';
-  if (hasAisEta && destMatchesFinal(s)) return 'ais-final';  // AIS to discharge port
-  if (s.revisedEta)                      return 'revised';    // booked + slip
-  if (s.arriveDate)                       return 'booked';    // user's original date
-  if (hasAisEta)                          return 'ais-next';  // AIS to intermediate port
+  if (hasAisEta && destMatchesFinal(s))   return 'ais-final'; // AIS to discharge port
+  if (s.revisedEta)                       return 'revised';   // booked + slip
+  if (s.arriveDate)                        return 'booked';   // user's original date
+  if (hasAisEta)                           return 'ais-next'; // AIS to intermediate port
   return 'none';
 }
 
@@ -2578,7 +2988,9 @@ function renderTable() {
       etaDisplay = '<span style="color:var(--outline-variant);">&#8212;</span>';
     } else {
       const badge =
-        source === 'ais-final'
+        source === 'ata'
+          ? ' <span style="font-size:0.5625rem;font-weight:800;background:rgba(12,82,22,0.15);color:var(--on-tertiary-fixed-variant);padding:2px 6px;border-radius:4px;letter-spacing:0.06em;">ATA</span>'
+        : source === 'ais-final'
           ? ' <span style="font-size:0.5625rem;font-weight:800;background:rgba(12,82,22,0.12);color:var(--on-tertiary-fixed-variant);padding:2px 6px;border-radius:4px;letter-spacing:0.06em;">AIS</span>'
         : source === 'revised'
           ? slipBadgeHtml(s)
@@ -2692,6 +3104,8 @@ const VESSEL_NAMES_TO_MMSI = {
 
 function openAddModal() {
   document.getElementById('addShipmentModal').classList.add('open');
+  switchEntryTab('manual');
+  clearBlFile();
   // Auto-generate a reference number
   const ref = 'MS-' + Math.floor(10000 + Math.random() * 90000) + '-' +
     String.fromCharCode(65 + Math.floor(Math.random() * 26)) +
@@ -2702,7 +3116,17 @@ function openAddModal() {
   document.getElementById('f-origin').value = '';
   document.getElementById('f-dest').value = '';
   document.getElementById('f-cargo').value = '';
+  document.getElementById('f-incoterms').value = '';
+  handleIncotermsChange('');
   document.getElementById('f-weight').value = '';
+  document.getElementById('f-pallets').value = '';
+  document.getElementById('f-carrier').value = '';
+  document.getElementById('f-local-ccy').value = 'USD';
+  document.getElementById('f-local-cost').value = '';
+  document.getElementById('f-freight-ccy').value = 'USD';
+  document.getElementById('f-freight-cost').value = '';
+  document.getElementById('f-dest-ccy').value = 'USD';
+  document.getElementById('f-dest-cost').value = '';
   document.getElementById('f-load-date').value = '';
   document.getElementById('f-arrive-date').value = '';
   hideVesselResults();
@@ -2716,18 +3140,75 @@ function closeAddModal() {
 
 
 function submitAddShipment() {
-  const id      = document.getElementById('f-ref').value.trim();
-  const vessel  = document.getElementById('f-vessel-name').value.trim().toUpperCase();
-  const mmsi    = document.getElementById('f-mmsi').value.trim();
-  const origin  = document.getElementById('f-origin').value.trim();
-  const dest    = document.getElementById('f-dest').value.trim();
-  const cargo   = document.getElementById('f-cargo').value.trim();
-  const weight  = document.getElementById('f-weight').value.trim();
+  const modal   = document.getElementById('addShipmentModal');
+  const editIdx = modal.dataset.editIdx;
+
+  // Read all form fields
+  const vessel     = document.getElementById('f-vessel-name').value.trim().toUpperCase();
+  const mmsi       = document.getElementById('f-mmsi').value.trim();
+  const origin     = document.getElementById('f-origin').value.trim();
+  const dest       = document.getElementById('f-dest').value.trim();
+  const cargo      = document.getElementById('f-cargo').value.trim();
+  const weight     = document.getElementById('f-weight').value.trim();
+  const pallets    = document.getElementById('f-pallets').value.trim();
+  const carrier    = document.getElementById('f-carrier').value.trim();
+  const incoterms  = document.getElementById('f-incoterms').value;
+  const localCcy   = document.getElementById('f-local-ccy').value;
+  const localCost  = document.getElementById('f-local-cost').value.trim();
+  const freightCcy = document.getElementById('f-freight-ccy').value;
+  const freightCost= document.getElementById('f-freight-cost').value.trim();
+  const destCcy    = document.getElementById('f-dest-ccy').value;
+  const destCost   = document.getElementById('f-dest-cost').value.trim();
   const loadDate   = document.getElementById('f-load-date').value;
+
+  // ── AUTO ENTRY MODE ───────────────────────────────────────────────────────
+  if (document.getElementById('tabAuto').classList.contains('active')) {
+    if (!blFileData) {
+      document.getElementById('blDropZone').style.borderColor = 'var(--error)';
+      setTimeout(() => document.getElementById('blDropZone').style.borderColor = '', 1500);
+      return;
+    }
+    // Placeholder — parse functionality added later
+    alert('B/L parsing coming soon. Switch to Manual Entry to add fields now.');
+    return;
+  }
+
+  // ── EDIT MODE ─────────────────────────────────────────────────────────────
+  if (editIdx !== undefined && editIdx !== '') {
+    const s = shipments[parseInt(editIdx)];
+    if (!s) return;
+    if (vessel)  s.vessel      = vessel;
+    if (mmsi)    s.mmsi        = mmsi;
+    if (origin)  s.origin      = origin;
+    if (dest)    s.dest        = dest;
+    s.cargo       = cargo;
+    s.carrier     = carrier;
+    s.incoterms   = incoterms;
+    s.weight      = weight;
+    s.pallets     = pallets;
+    s.localCcy    = localCcy;   s.localCost   = localCost;
+    s.freightCcy  = freightCcy; s.freightCost = freightCost;
+    s.destCcy     = destCcy;    s.destCost    = destCost;
+    if (loadDate) s.loadDate   = loadDate;
+    VESSEL_REGISTRY = buildRegistry();
+    TRACKED_MMSIS   = Object.keys(VESSEL_REGISTRY);
+    if (wsApiKey) {
+      notifyProxy(wsApiKey, TRACKED_MMSIS);
+      if (ws) { ws.close(); ws = null; }
+      setTimeout(() => connectAIS(wsApiKey), 300);
+    }
+    saveShipments();
+    renderTable();
+    closeAddModal();
+    closeEditMode();
+    return;
+  }
+
+  // ── ADD MODE ──────────────────────────────────────────────────────────────
+  const id         = document.getElementById('f-ref').value.trim();
   const arriveDate = document.getElementById('f-arrive-date').value;
 
   if (!id || !vessel || !mmsi || !origin || !dest) {
-    // Highlight missing fields
     ['f-ref','f-vessel-name','f-mmsi','f-origin','f-dest'].forEach(fid => {
       const el = document.getElementById(fid);
       if (!el.value.trim()) el.style.boxShadow = '0 0 0 2px var(--error)';
@@ -2736,7 +3217,9 @@ function submitAddShipment() {
   }
 
   const newShipment = makeShipment({
-    id, vessel, mmsi, origin, dest, cargo, weight, loadDate, arriveDate,
+    id, vessel, mmsi, origin, dest, cargo, weight, pallets, carrier, incoterms,
+    loadDate, arriveDate,
+    localCost, localCcy, freightCost, freightCcy, destCost, destCcy,
     timeline: [
       { event: 'Booking created', time: new Date().toLocaleDateString('en-GB', {day:'2-digit',month:'short'}), state: 'done' },
       { event: 'Loading at ' + origin, time: loadDate ? new Date(loadDate).toLocaleDateString('en-GB',{day:'2-digit',month:'short'}) : 'TBC', state: 'pending' },
@@ -2746,22 +3229,16 @@ function submitAddShipment() {
 
   shipments.push(newShipment);
   saveShipments();
-
-  // Rebuild registry and reconnect AIS if new MMSI
   VESSEL_REGISTRY = buildRegistry();
-  TRACKED_MMSIS = Object.keys(VESSEL_REGISTRY);
+  TRACKED_MMSIS   = Object.keys(VESSEL_REGISTRY);
   if (wsApiKey) {
-    // Tell the proxy's persistent connection about the new MMSI immediately
     notifyProxy(wsApiKey, TRACKED_MMSIS);
-    // Also reconnect the browser WebSocket with updated list
     clearTimeout(wsReconnectTimer);
     if (ws) { ws.close(); ws = null; }
     setTimeout(() => connectAIS(wsApiKey), 300);
   }
-
   renderTable();
   closeAddModal();
-  // Open detail panel for the new shipment
   setTimeout(() => openDetail(shipments.length - 1), 100);
 }
 
@@ -3147,6 +3624,8 @@ function computeAlerts() {
   const alerts = [];
 
   shipments.forEach((s, idx) => {
+    // Skip completed shipments — they're in the Log, not the dashboard
+    if (s.completedAt || s.status === 'Arrived') return;
     // ── Slipped delivery ──────────────────────────────────────────────────────
     if (s.slipDays > 0) {
       alerts.push({
@@ -3416,13 +3895,32 @@ function logRowHtml(s, rowIdx) {
     + '<div class="log-drawer-section">'
     + '<div class="log-drawer-label">Cargo details</div>'
     + '<div style="display:flex;gap:24px;flex-wrap:wrap;">'
-    + '<div><div style="font-size:0.625rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:var(--outline);">Description</div>'
-    + '<div style="font-size:0.8125rem;color:var(--on-surface);margin-top:3px;">' + (s.cargo || '—') + '</div></div>'
-    + '<div><div style="font-size:0.625rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:var(--outline);">Weight</div>'
-    + '<div style="font-size:0.8125rem;color:var(--on-surface);margin-top:3px;">' + (s.weight || '—') + '</div></div>'
+    + '<div><div style="font-size:0.625rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:var(--outline);">Container</div>'
+    + '<div style="font-size:0.8125rem;color:var(--on-surface);margin-top:3px;">' + (s.cargo || '—') + (s.carrier ? ' · ' + s.carrier : '') + '</div></div>'
+    + '<div><div style="font-size:0.625rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:var(--outline);">Weight / Pallets</div>'
+    + '<div style="font-size:0.8125rem;color:var(--on-surface);margin-top:3px;">' + (s.weight ? s.weight + ' kg' : '—') + (s.pallets ? ' · ' + s.pallets + ' pallets' : '') + '</div></div>'
     + '<div><div style="font-size:0.625rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:var(--outline);">Booked arrival</div>'
     + '<div style="font-size:0.8125rem;color:var(--on-surface);margin-top:3px;">' + (s.arriveDate || '—') + '</div></div>'
     + '</div>'
+    + (s.localCost || s.freightCost || s.destCost ? (function() {
+        const destCcy = s.destCcy || 'USD';
+        const sameCcy = [
+          {amt: s.localCost, ccy: s.localCcy},
+          {amt: s.freightCost, ccy: s.freightCcy},
+          {amt: s.destCost, ccy: s.destCcy},
+        ].filter(c => c.amt).map(c =>
+          c.ccy === destCcy
+            ? '<span style="color:var(--on-surface);">' + c.ccy + ' ' + Number(c.amt).toLocaleString() + '</span>'
+            : '<span style="color:var(--outline);font-size:0.75rem;">' + c.ccy + ' ' + Number(c.amt).toLocaleString() + '</span>'
+        ).join(' + ');
+        const total = [s.localCost, s.freightCost, s.destCost]
+          .filter((a,i) => a && [s.localCcy,s.freightCcy,s.destCcy][i] === destCcy)
+          .reduce((sum,a) => sum + Number(a), 0);
+        return '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--surface-container-high);font-size:0.8125rem;">'
+          + '<span style="color:var(--outline);">Costs: </span>' + sameCcy
+          + (total > 0 ? ' <strong>= ' + destCcy + ' ' + total.toLocaleString() + '</strong>' : '')
+          + '</div>';
+      })() : '')
     + '</div>'
 
     + '</div></div>'
@@ -3470,6 +3968,179 @@ function setPerPage(n) {
     btn.classList.toggle('active-perpage', parseInt(btn.dataset.val) === n);
   });
   renderTable();
+}
+
+// -- ENTRY MODE TABS ---------------------------------------------------------
+function switchEntryTab(tab) {
+  const isManual = tab === 'manual';
+  document.getElementById('tabManual').classList.toggle('active', isManual);
+  document.getElementById('tabAuto').classList.toggle('active', !isManual);
+  document.getElementById('entryManual').style.display = isManual ? '' : 'none';
+  // Auto panel uses flex to centre the drop zone
+  document.getElementById('entryAuto').style.display   = isManual ? 'none' : 'flex';
+  // Swap the submit button
+  const submitBtn = document.getElementById('submitAddShipment');
+  if (isManual) {
+    submitBtn.innerHTML = 'Add Shipment';
+  } else {
+    submitBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size:18px;vertical-align:middle;">auto_awesome</span> Parse &amp; Fill Fields';
+  }
+}
+
+// -- AUTO ENTRY FILE HANDLING ------------------------------------------------
+let blFileData = null;
+
+function clearBlFile() {
+  blFileData = null;
+  document.getElementById('blFileInput').value = '';
+  document.getElementById('blFileChosen').style.display = 'none';
+  document.getElementById('blDropZone').style.display   = '';
+}
+
+function handleBlFile(file) {
+  if (!file || !file.name.toLowerCase().endsWith('.pdf')) return;
+  blFileData = file;
+  document.getElementById('blFileName').textContent = file.name;
+  document.getElementById('blFileSize').textContent = (file.size / 1024).toFixed(0) + ' KB';
+  document.getElementById('blDropZone').style.display   = 'none';
+  document.getElementById('blFileChosen').style.display = '';
+}
+
+// -- DOCUMENT SECTION (detail panel) ----------------------------------------
+const DOC_LABELS = { bl: 'Bill of Lading', invoice: 'Commercial Invoice', packing: 'Packing List' };
+let pendingDocType = null;
+
+function triggerDocUpload(docType) {
+  pendingDocType = docType;
+  document.getElementById('docFileInput').value = '';
+  document.getElementById('docFileInput').click();
+}
+
+function renderDocSection(s) {
+  const list    = document.getElementById('dpDocsList');
+  const btns    = document.getElementById('dpDocUploadBtns');
+  if (!list || !btns) return;
+  const docs    = s.docs || {};
+  const docTypes = ['bl', 'invoice', 'packing'];
+  const uploaded = docTypes.filter(t => docs[t]);
+
+  // Render uploaded docs
+  list.innerHTML = uploaded.map(t => {
+    const doc = docs[t];
+    return '<div class="doc-row" data-doctype="' + t + '">'
+      + '<span class="material-symbols-outlined">picture_as_pdf</span>'
+      + '<div style="flex:1;min-width:0;">'
+      + '<div class="doc-name">' + (doc.name || DOC_LABELS[t]) + '</div>'
+      + '<div class="doc-type">' + DOC_LABELS[t] + '</div>'
+      + '</div>'
+      + '<button class="doc-action" data-action="view" title="View">'
+      + '<span class="material-symbols-outlined" style="font-size:18px;">open_in_new</span>'
+      + '</button>'
+      + '<button class="doc-action" data-action="remove" title="Remove" style="color:var(--outline);">'
+      + '<span class="material-symbols-outlined" style="font-size:18px;">delete_outline</span>'
+      + '</button>'
+      + '</div>';
+  }).join('');
+  list.querySelectorAll('.doc-action').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const dt = btn.closest('[data-doctype]').dataset.doctype;
+      btn.dataset.action === 'view' ? viewDoc(dt) : removeDoc(dt);
+    });
+  });
+
+  // Show upload buttons only for missing doc types
+  const missing = docTypes.filter(t => !docs[t]);
+  btns.innerHTML = missing.map(t =>
+    '<button class="file-upload-btn" data-doctype="' + t + '">'
+    + '<span class="material-symbols-outlined">upload_file</span>'
+    + DOC_LABELS[t]
+    + '</button>'
+  ).join('');
+  btns.querySelectorAll('.file-upload-btn').forEach(btn => {
+    btn.addEventListener('click', () => triggerDocUpload(btn.dataset.doctype));
+  });
+}
+
+function viewDoc(docType) {
+  if (activeId === null) return;
+  const doc = (shipments[activeId].docs || {})[docType];
+  if (doc && doc.url) window.open(doc.url, '_blank');
+  else alert('File viewer coming soon — upload functionality will be added with Supabase Storage.');
+}
+
+function removeDoc(docType) {
+  if (activeId === null) return;
+  const s = shipments[activeId];
+  if (!s.docs) return;
+  delete s.docs[docType];
+  saveShipments();
+  renderDocSection(s);
+}
+
+// -- INCOTERMS ---------------------------------------------------------------
+// These incoterms mean the seller covers origin costs — grey out local cost field
+const INCOTERMS_NO_LOCAL_COST = ['CPT', 'DAP', 'FOB', 'CIF', 'CFR'];
+
+function handleIncotermsChange(value) {
+  const localCostField = document.getElementById('f-local-cost');
+  const localCcyField  = document.getElementById('f-local-ccy');
+  const disable = INCOTERMS_NO_LOCAL_COST.includes(value);
+  localCostField.disabled = disable;
+  localCostField.style.opacity = disable ? '0.4' : '1';
+  localCcyField.disabled  = disable;
+  localCcyField.style.opacity  = disable ? '0.4' : '1';
+  if (disable) localCostField.value = '';
+}
+
+// -- EDIT MODAL ---------------------------------------------------------------
+function openEditModal(idx) {
+  const s = shipments[idx];
+  if (!s) return;
+  document.getElementById('addShipmentModal').classList.add('open');
+  document.getElementById('addShipmentModal').dataset.editIdx = idx;
+  document.querySelector('.add-modal-header h2').textContent = 'Edit Shipment';
+  document.querySelector('.add-modal-header p').textContent = 'Update details — arrival date is set by AIS.';
+  document.getElementById('submitAddShipment').textContent = 'Save Changes';
+  // Hide tabs in edit mode, ensure manual panel is shown
+  document.getElementById('entryModeTabs').style.display = 'none';
+  document.getElementById('entryManual').style.display = '';
+  document.getElementById('entryAuto').style.display = 'none';
+  document.getElementById('f-ref').value            = s.id;
+  document.getElementById('f-ref').readOnly         = true;
+  document.getElementById('f-ref').style.opacity    = '0.5';
+  document.getElementById('f-vessel-name').value    = s.vessel;
+  document.getElementById('f-mmsi').value           = s.mmsi;
+  document.getElementById('f-origin').value         = s.origin;
+  document.getElementById('f-dest').value           = s.dest;
+  document.getElementById('f-incoterms').value      = s.incoterms || '';
+  handleIncotermsChange(s.incoterms || '');
+  document.getElementById('f-cargo').value          = s.cargo || '';
+  document.getElementById('f-carrier').value        = s.carrier || '';
+  document.getElementById('f-weight').value         = s.weight || '';
+  document.getElementById('f-pallets').value        = s.pallets || '';
+  document.getElementById('f-local-ccy').value      = s.localCcy || 'USD';
+  document.getElementById('f-local-cost').value     = s.localCost || '';
+  document.getElementById('f-freight-ccy').value    = s.freightCcy || 'USD';
+  document.getElementById('f-freight-cost').value   = s.freightCost || '';
+  document.getElementById('f-dest-ccy').value       = s.destCcy || 'USD';
+  document.getElementById('f-dest-cost').value      = s.destCost || '';
+  document.getElementById('f-load-date').value      = s.loadDate || '';
+  document.getElementById('f-arrive-date').value    = '';
+  document.getElementById('f-arrive-date').disabled = true;
+  document.getElementById('f-arrive-date').style.opacity = '0.4';
+  hideVesselResults();
+}
+
+function closeEditMode() {
+  const modal = document.getElementById('addShipmentModal');
+  delete modal.dataset.editIdx;
+  document.querySelector('.add-modal-header h2').textContent = 'New Shipment Booking';
+  document.querySelector('.add-modal-header p').textContent = 'Your cargo details — linked to a tracked vessel via MMSI';
+  document.getElementById('submitAddShipment').textContent = 'Add Shipment';
+  document.getElementById('f-ref').readOnly         = false;
+  document.getElementById('f-ref').style.opacity    = '1';
+  document.getElementById('f-arrive-date').disabled = false;
+  document.getElementById('f-arrive-date').style.opacity = '1';
 }
 
 // -- BOOT ----------------------------------------------------------------------
@@ -3623,10 +4294,8 @@ window.addEventListener('load', () => {
     });
   });
 
-  // Close modal on backdrop click
-  document.getElementById('addShipmentModal').addEventListener('click', function(e) {
-    if (e.target === this) closeAddModal();
-  });
+  // Modal only closes via X button — no backdrop click dismiss
+  // (prevents accidental data loss while filling the form)
 
   // Wire the sidebar New Shipment button
   document.querySelector('.new-shipment-btn').addEventListener('click', openAddModal);
@@ -3744,6 +4413,53 @@ window.addEventListener('load', () => {
     document.getElementById('fleetMenu').style.display = 'none';
     renderTable(); // will show 0 shipments until air is built
   });
+  // ── EDIT SHIPMENT ─────────────────────────────────────────────────────────
+  document.getElementById('editShipmentBtn').addEventListener('click', () => {
+    if (activeId !== null) { closeDetail(); openEditModal(activeId); }
+  });
+  document.getElementById('closeAddModal').addEventListener('click', closeEditMode);
+  document.getElementById('cancelAddModal').addEventListener('click', closeEditMode);
+
+  // ── B/L FILE INPUT (Auto Entry tab) ──────────────────────────────────────
+  document.getElementById('blFileInput').addEventListener('change', (e) => {
+    if (e.target.files[0]) handleBlFile(e.target.files[0]);
+  });
+  document.getElementById('submitAutoEntry').addEventListener('click', () => {
+    if (!blFileData) {
+      document.getElementById('blDropZone').style.borderColor = 'var(--error)';
+      return;
+    }
+    // Placeholder — parse functionality added later
+    alert('B/L parsing coming soon. Switch to Manual Entry to add fields now.');
+  });
+
+  // Drag and drop on drop zone
+  const dropZone = document.getElementById('blDropZone');
+  dropZone.addEventListener('dragover',  (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', ()  => { dropZone.classList.remove('drag-over'); });
+  dropZone.addEventListener('drop',      (e) => {
+    e.preventDefault(); dropZone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) handleBlFile(file);
+  });
+
+  // ── DOC UPLOAD (detail panel) ─────────────────────────────────────────────
+  document.getElementById('docFileInput').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file || activeId === null || !pendingDocType) return;
+    const s = shipments[activeId];
+    if (!s.docs) s.docs = {};
+    // Store filename as a placeholder — actual upload to Supabase Storage comes later
+    s.docs[pendingDocType] = { name: file.name, size: file.size, addedAt: new Date().toISOString(), url: null };
+    saveShipments();
+    renderDocSection(s);
+    pendingDocType = null;
+  });
+
+  // ── RESET TABS ON MODAL OPEN ──────────────────────────────────────────────
+  const origOpenAdd = openAddModal;
+  // Patch openAddModal to reset to manual tab each time
+  const _origOpen = window.openAddModal;
   document.getElementById('connBadgeBtn').addEventListener('click', openApiModal);
 
   // ── NAV SWITCHING ─────────────────────────────────────────────────────────
