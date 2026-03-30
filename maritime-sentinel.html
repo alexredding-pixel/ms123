@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<meta http-equiv="Content-Security-Policy" content="default-src 'self' https://*.supabase.co https://ms123-production.up.railway.app wss://ms123-production.up.railway.app; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src https://fonts.gstatic.com https://cdnjs.cloudflare.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://*.basemaps.cartocdn.com https://*.cartocdn.com https://cdnjs.cloudflare.com https://lh3.googleusercontent.com; connect-src 'self' https://*.supabase.co https://ms123-production.up.railway.app wss://ms123-production.up.railway.app https://api.anthropic.com https://*.basemaps.cartocdn.com https://*.cartocdn.com; blob: blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' https://*.supabase.co https://ms123-production.up.railway.app wss://ms123-production.up.railway.app; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src https://fonts.gstatic.com https://cdnjs.cloudflare.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://*.basemaps.cartocdn.com https://*.cartocdn.com https://cdnjs.cloudflare.com https://lh3.googleusercontent.com; connect-src 'self' https://*.supabase.co https://ms123-production.up.railway.app wss://ms123-production.up.railway.app https://api.anthropic.com https://*.basemaps.cartocdn.com https://*.cartocdn.com;">
 <title>Maritime Sentinel | Container Tracking Dashboard</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -4725,9 +4725,6 @@ window.addEventListener('load', async () => {
   // Render immediately from local cache, then sync fresh data from Supabase
   renderTable();
   syncShipmentsFromSupabase();
-
-  // Fetch voyage event history from proxy on load
-  fetchVoyageEvents();
 
   // Fetch last-known positions from proxy (persisted 24/7 by Railway)
   fetchLastKnownPositions();
