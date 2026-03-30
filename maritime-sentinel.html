@@ -2152,7 +2152,7 @@ async function sbFetch(method, table, body, params) {
     if (res.status === 204 || res.status === 201) return [];
     if (res.status === 401 || res.status === 403) {
       // Session expired or invalid — force re-login
-      if (currentSession) { currentSession = null; localStorage.removeItem('ms_session'); showLoginScreen(); }
+      if (currentSession) { currentSession = null; sessionStorage.removeItem('ms_session'); showLoginScreen(); }
       return null;
     }
     return res.ok ? await res.json() : null;
@@ -2761,7 +2761,9 @@ function slipBadgeHtml(s) {
 }
 
 function detailRow(label, value) {
-  return `<div class="detail-row"><span class="label">${label}</span><span class="value">${value}</span></div>`;
+  // Escape plain text values; pass-through values already containing safe HTML (spans with styles)
+  const safeVal = (typeof value === 'string' && !value.includes('<span')) ? esc(value) : (value ?? '');
+  return '<div class="detail-row"><span class="label">' + esc(label) + '</span><span class="value">' + safeVal + '</span></div>';
 }
 
 // Map dot position update - maps lat/lng to SVG viewport coords
@@ -2890,9 +2892,8 @@ function closeDetail() {
 function openApiModal() {
   const m = document.getElementById('apiModal');
   m.style.display = 'flex';
-  const savedKey = localStorage.getItem('aisstream_key');
   const input = document.getElementById('apiKeyInput');
-  if (savedKey && input) input.value = savedKey;
+  // Key not stored locally for security — user enters fresh each session
   setTimeout(() => input && input.focus(), 50);
 }
 function closeApiModal() {
@@ -2901,7 +2902,7 @@ function closeApiModal() {
 function submitApiKey() {
   const key = document.getElementById('apiKeyInput').value.trim();
   if (!key) return;
-  localStorage.setItem('aisstream_key', key);
+  // AIS key held in memory only — not persisted to localStorage
   closeApiModal();
   connectAIS(key);
 }
@@ -4192,7 +4193,7 @@ async function doLogin() {
       return;
     }
     currentSession = data;
-    localStorage.setItem('ms_session', JSON.stringify({
+    sessionStorage.setItem('ms_session', JSON.stringify({
       access_token:  data.access_token,
       refresh_token: data.refresh_token,
       expires_at:    Date.now() + data.expires_in * 1000,
@@ -4222,7 +4223,7 @@ function toggleLoginPw() {
 
 async function tryRestoreSession() {
   try {
-    const saved = localStorage.getItem('ms_session');
+    const saved = sessionStorage.getItem('ms_session');
     if (!saved) return false;
     const session = JSON.parse(saved);
     // If expires in > 5 minutes, use it directly
@@ -4240,7 +4241,7 @@ async function tryRestoreSession() {
       if (res.ok) {
         const data = await res.json();
         currentSession = data;
-        localStorage.setItem('ms_session', JSON.stringify({
+        sessionStorage.setItem('ms_session', JSON.stringify({
           access_token:  data.access_token,
           refresh_token: data.refresh_token,
           expires_at:    Date.now() + data.expires_in * 1000,
@@ -4250,13 +4251,13 @@ async function tryRestoreSession() {
       }
     }
   } catch(e) {}
-  localStorage.removeItem('ms_session');
+  sessionStorage.removeItem('ms_session');
   return false;
 }
 
 function doLogout() {
   currentSession = null;
-  localStorage.removeItem('ms_session');
+  sessionStorage.removeItem('ms_session');
   localStorage.removeItem('ms_shipments_cache');
   sessionStorage.removeItem('ms_proxy_secret');
   shipments = [];
@@ -4320,7 +4321,7 @@ setInterval(async () => {
     if (res.ok) {
       const data = await res.json();
       currentSession = data;
-      localStorage.setItem('ms_session', JSON.stringify({
+      sessionStorage.setItem('ms_session', JSON.stringify({
         access_token:  data.access_token,
         refresh_token: data.refresh_token,
         expires_at:    Date.now() + data.expires_in * 1000,
@@ -5208,7 +5209,6 @@ window.addEventListener('load', async () => {
   document.getElementById('submitKeyBtn').addEventListener('click', submitApiKey);
   document.getElementById('cancelKeyBtn').addEventListener('click', closeApiModal);
   document.getElementById('clearKeyLink').addEventListener('click', () => {
-    localStorage.removeItem('aisstream_key');
     document.getElementById('apiKeyInput').value = '';
     if (ws) { ws.close(); ws = null; wsApiKey = ''; }
     setConnectionStatus('disconnected');
@@ -5251,8 +5251,8 @@ window.addEventListener('load', async () => {
   initLeafletMap();
 
   // Auto-connect if key already saved
-  const savedKey = localStorage.getItem('aisstream_key');
-  if (savedKey) connectAIS(savedKey);
+  // AIS key is not stored locally — user must re-enter after refresh
+  // (or set AIS_API_KEY on Railway to have proxy auto-connect)
 });
 </script>
 </body>

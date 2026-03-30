@@ -53,7 +53,8 @@ function extractFirstPage(base64Pdf) {
 
 // ── SUPABASE CLIENT (lightweight — no SDK needed) ─────────────────────────────
 const SUPABASE_URL = 'https://nkxvacdhwimhemnmcpxe.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5reHZhY2Rod2ltaGVtbm1jcHhlIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDYyNDExOCwiZXhwIjoyMDkwMjAwMTE4fQ.IGljoHOaL1Xlf6qsAk-CVl4LX5vokeaeEFr_7zLzXkk'; // service_role — bypasses RLS for server-side writes
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || '';
+if (!SUPABASE_KEY) { console.error('[FATAL] SUPABASE_SERVICE_KEY env var not set — exiting'); process.exit(1); }
 
 function supabase(method, table, body, params) {
   return new Promise((resolve) => {
@@ -103,6 +104,7 @@ let apiKey         = '';
 let trackedMmsis   = [];
 let connectedCount = 0;
 const lastDest     = {};
+const parseRateLimit = new Map(); // ip -> { count, resetAt } — rate limits /parse-bl
 
 // Track last time each MMSI sent a message via aisstream
 const lastAisMessage = {};
@@ -158,19 +160,19 @@ async function logEvent(evt) {
 // ── CONFIG ────────────────────────────────────────────────────────────────────
 function loadConfig() {
   try {
+    // AIS key from env var ONLY — never read from disk (keeps key off filesystem)
+    apiKey = process.env.AIS_API_KEY || '';
     if (fs.existsSync(CONFIG_FILE)) {
       const c = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-      apiKey = c.apiKey || process.env.AIS_API_KEY || '';
       trackedMmsis = c.trackedMmsis || [];
-      console.log(`[config] ${trackedMmsis.length} vessels, key: ${apiKey ? 'set' : 'missing'}`);
-    } else {
-      apiKey = process.env.AIS_API_KEY || '';
+      console.log('[config] ' + trackedMmsis.length + ' vessels, AIS key: ' + (apiKey ? 'set' : 'missing'));
     }
   } catch (e) {}
 }
 
 function saveConfig() {
-  try { fs.writeFileSync(CONFIG_FILE, JSON.stringify({ apiKey, trackedMmsis }, null, 2)); } catch (e) {}
+  // Never write apiKey to disk — it lives in env var only
+  try { fs.writeFileSync(CONFIG_FILE, JSON.stringify({ trackedMmsis }, null, 2)); } catch (e) {}
 }
 
 // ── AIS MESSAGE INSPECTION ────────────────────────────────────────────────────
@@ -366,7 +368,7 @@ const httpServer = http.createServer((req, res) => {
           const inner   = JSON.parse(wrapper.contents);
           res.writeHead(200, {
             'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Origin': 'https://ms123-production.up.railway.app',
           });
           res.end(JSON.stringify(inner));
         } catch(e) {
@@ -387,7 +389,6 @@ const httpServer = http.createServer((req, res) => {
       aisConnected: aisSocket?.readyState === WebSocket.OPEN,
       browsers: connectedCount,
       vessels: trackedMmsis.length,
-      mmsis: trackedMmsis,
       uptime: Math.round(process.uptime()) + 's',
     }));
     return;
@@ -395,7 +396,7 @@ const httpServer = http.createServer((req, res) => {
 
   if (req.method === 'POST' && req.url === '/subscribe') {
     let body = '';
-    req.on('data', c => body += c);
+    req.on('data', c => { body += c; if (body.length > 100 * 1024) { req.destroy(); return; } });
     req.on('end', () => {
       try {
         const { apiKey: k, mmsis } = JSON.parse(body);
@@ -416,6 +417,19 @@ const httpServer = http.createServer((req, res) => {
 
   // ── POST /parse-bl — extract page 1 and send to Claude for parsing ─────────
   if (req.method === 'POST' && req.url === '/parse-bl') {
+    // Rate limit: max 20 parses per IP per hour
+    const ip = req.socket.remoteAddress || 'unknown';
+    const now = Date.now();
+    const rl  = parseRateLimit.get(ip) || { count: 0, resetAt: now + 3600000 };
+    if (now > rl.resetAt) { rl.count = 0; rl.resetAt = now + 3600000; }
+    if (rl.count >= 20) {
+      res.writeHead(429, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Rate limit exceeded. Try again later.' }));
+      return;
+    }
+    rl.count++;
+    parseRateLimit.set(ip, rl);
+
     if (!ANTHROPIC_KEY) {
       res.writeHead(503, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'ANTHROPIC_API_KEY not configured on server' }));
@@ -500,9 +514,9 @@ Return this exact structure (use null for any field not found):
         res.end(JSON.stringify({ ok: true, data: parsed }));
 
       } catch(e) {
-        console.error('[parse-bl] Error:', e.message);
+        console.error('[parse-bl] Error:', e.message, e.stack);
         res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: e.message }));
+        res.end(JSON.stringify({ error: 'Failed to parse document. Please try again.' }));
       }
     });
     return;
