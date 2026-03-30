@@ -959,6 +959,11 @@ tr.selected .row-chevron { background: var(--primary-fixed); color: var(--primar
 .log-col-chevron { display: flex; justify-content: flex-end; }
 
 /* Expandable drawer */
+.log-delete-btn:hover {
+  color: var(--error) !important;
+  background: var(--error-container) !important;
+}
+.log-delete-btn { transition: color 0.15s, background 0.15s; }
 .log-drawer {
   max-height: 0; overflow: hidden;
   transition: max-height 0.3s ease;
@@ -3858,6 +3863,109 @@ function renderLog() {
     + sorted.map((s, i) => logRowHtml(s, i)).join('');
 }
 
+// -- LOG COST SECTION ---------------------------------------------------------
+// Builds the cost breakdown with currency conversion to destCcy.
+// The user provides manual FX rates for any non-destCcy costs.
+function buildCostSection(s, rowIdx) {
+  const destCcy = s.destCcy || 'USD';
+  const costs = [
+    { label: 'Local Cost',   amt: s.localCost,   ccy: s.localCcy   || 'USD' },
+    { label: 'Sea Freight',  amt: s.freightCost, ccy: s.freightCcy || 'USD' },
+    { label: 'Dest. Clearance', amt: s.destCost, ccy: s.destCcy    || 'USD' },
+  ].filter(c => c.amt && Number(c.amt) > 0);
+
+  if (costs.length === 0) return '';
+
+  const fxKey  = 'ms_fx_' + rowIdx;
+  const stored = (() => { try { return JSON.parse(sessionStorage.getItem(fxKey) || '{}'); } catch(e) { return {}; } })();
+
+  // Build per-cost rows with inline FX input for foreign currencies
+  const rows = costs.map(c => {
+    const isSame = c.ccy === destCcy;
+    const fxRate = stored[c.ccy] || '';
+    const converted = (fxRate && !isSame) ? (Number(c.amt) * Number(fxRate)).toFixed(0) : '';
+    return '<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--surface-container-high);">'
+      + '<div style="flex:1;font-size:0.8125rem;color:var(--on-surface-variant);">' + esc(c.label) + '</div>'
+      + '<div style="font-size:0.8125rem;font-weight:600;color:var(--on-surface);white-space:nowrap;">'
+      + esc(c.ccy) + ' ' + Number(c.amt).toLocaleString()
+      + '</div>'
+      + (!isSame
+        ? '<div style="display:flex;align-items:center;gap:4px;font-size:0.75rem;color:var(--outline);">'
+          + '<span>×</span>'
+          + '<input type="number" min="0" step="0.0001" placeholder="FX rate" value="' + esc(fxRate) + '"'
+          + ' data-ccy="' + esc(c.ccy) + '" data-fxkey="' + esc(fxKey) + '"'
+          + ' onchange="updateFxRate(this)"'
+          + ' onclick="event.stopPropagation()"'
+          + ' style="width:72px;border:1px solid var(--outline-variant);border-radius:6px;padding:3px 6px;font-size:0.75rem;font-family:inherit;background:var(--surface-container-high);color:var(--on-surface);outline:none;"/>'
+          + (converted ? '<span style="color:var(--on-surface);font-weight:600;white-space:nowrap;">= ' + esc(destCcy) + ' ' + Number(converted).toLocaleString() + '</span>' : '')
+          + '</div>'
+        : '')
+      + '</div>';
+  }).join('');
+
+  // Compute total in destCcy (native + converted)
+  let total = 0;
+  let allConverted = true;
+  costs.forEach(c => {
+    if (c.ccy === destCcy) {
+      total += Number(c.amt);
+    } else {
+      const rate = stored[c.ccy];
+      if (rate) total += Number(c.amt) * Number(rate);
+      else allConverted = false;
+    }
+  });
+
+  const totalHtml = total > 0
+    ? '<div style="display:flex;align-items:center;justify-content:space-between;padding-top:8px;margin-top:2px;">'
+      + '<div style="font-size:0.75rem;font-weight:800;text-transform:uppercase;letter-spacing:0.08em;color:var(--outline);">'
+      + 'Total ' + (allConverted ? '' : '(partial)') + '</div>'
+      + '<div style="font-size:1rem;font-weight:900;color:var(--primary);">'
+      + esc(destCcy) + ' ' + Math.round(total).toLocaleString()
+      + '</div></div>'
+    : '';
+
+  return '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--surface-container-high);">'
+    + '<div style="font-size:0.625rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:var(--outline);margin-bottom:6px;">Costs'
+    + ' <span style="font-weight:400;text-transform:none;letter-spacing:0;">— converting to ' + esc(destCcy) + '</span></div>'
+    + rows
+    + totalHtml
+    + (!allConverted
+      ? '<div style="font-size:0.6875rem;color:var(--outline);margin-top:6px;">Enter FX rates above to include all costs in total</div>'
+      : '')
+    + '</div>';
+}
+
+function updateFxRate(input) {
+  const fxKey = input.dataset.fxkey;
+  const ccy   = input.dataset.ccy;
+  const rate  = input.value;
+  try {
+    const stored = JSON.parse(sessionStorage.getItem(fxKey) || '{}');
+    stored[ccy] = rate;
+    sessionStorage.setItem(fxKey, JSON.stringify(stored));
+  } catch(e) {}
+  // Re-render the log to reflect new rate
+  renderLog();
+}
+
+// -- LOG DELETE ---------------------------------------------------------------
+async function deleteLogEntry(event, shipmentId) {
+  event.stopPropagation(); // Don't toggle the drawer
+  if (!confirm('Permanently delete this log entry and all its documents?\n\nThis cannot be undone.')) return;
+  try {
+    // Delete from Supabase (cascade deletes docs too via foreign key)
+    await sbFetch('DELETE', 'shipments', null, 'id=eq.' + encodeURIComponent(shipmentId));
+    // Remove from local array
+    shipments = shipments.filter(s => s.id !== shipmentId);
+    saveShipments();
+    renderLog();
+    console.log('[log] Deleted shipment:', shipmentId);
+  } catch(e) {
+    alert('Could not delete record. Please try again.');
+  }
+}
+
 function logRowHtml(s, rowIdx) {
   const slip = s.slipDays || 0;
   const slipColor = slip > 0 ? 'var(--error)' : slip < 0 ? 'var(--on-tertiary-fixed-variant)' : 'var(--on-surface-variant)';
@@ -3882,7 +3990,12 @@ function logRowHtml(s, rowIdx) {
     + '<div class="log-col-date" style="font-size:0.8125rem;color:var(--on-surface-variant);text-align:right;">'
     + completedStr
     + '</div>'
-    + '<div class="log-col-chevron">'
+    + '<div class="log-col-chevron" style="display:flex;align-items:center;gap:8px;">'
+    + '<button class="log-delete-btn" onclick="deleteLogEntry(event,&quot;' + s.id + '&quot;)" title="Delete record"'
+    + ' style="background:none;border:none;cursor:pointer;padding:4px;color:var(--outline);display:flex;align-items:center;border-radius:6px;transition:color 0.15s,background 0.15s;"'
+    + '>'
+    + '<span class="material-symbols-outlined" style="font-size:16px;">delete_outline</span>'
+    + '</button>'
     + '<span class="material-symbols-outlined log-chevron" style="font-size:18px;color:var(--outline);transition:transform 0.2s;">expand_more</span>'
     + '</div>'
     + '</div>'
@@ -3918,25 +4031,7 @@ function logRowHtml(s, rowIdx) {
     + '<div><div style="font-size:0.625rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:var(--outline);">Booked arrival</div>'
     + '<div style="font-size:0.8125rem;color:var(--on-surface);margin-top:3px;">' + (s.arriveDate || '—') + '</div></div>'
     + '</div>'
-    + (s.localCost || s.freightCost || s.destCost ? (function() {
-        const destCcy = s.destCcy || 'USD';
-        const sameCcy = [
-          {amt: s.localCost, ccy: s.localCcy},
-          {amt: s.freightCost, ccy: s.freightCcy},
-          {amt: s.destCost, ccy: s.destCcy},
-        ].filter(c => c.amt).map(c =>
-          c.ccy === destCcy
-            ? '<span style="color:var(--on-surface);">' + c.ccy + ' ' + Number(c.amt).toLocaleString() + '</span>'
-            : '<span style="color:var(--outline);font-size:0.75rem;">' + c.ccy + ' ' + Number(c.amt).toLocaleString() + '</span>'
-        ).join(' + ');
-        const total = [s.localCost, s.freightCost, s.destCost]
-          .filter((a,i) => a && [s.localCcy,s.freightCcy,s.destCcy][i] === destCcy)
-          .reduce((sum,a) => sum + Number(a), 0);
-        return '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--surface-container-high);font-size:0.8125rem;">'
-          + '<span style="color:var(--outline);">Costs: </span>' + sameCcy
-          + (total > 0 ? ' <strong>= ' + destCcy + ' ' + total.toLocaleString() + '</strong>' : '')
-          + '</div>';
-      })() : '')
+    + buildCostSection(s, rowIdx)
     + '</div>'
 
     + '</div></div>'
