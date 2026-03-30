@@ -312,9 +312,18 @@ const httpServer = http.createServer((req, res) => {
     return;
   }
 
+  // Serve favicon (no auth required)
+  if (req.url === '/favicon.ico') {
+    res.writeHead(200, { 'Content-Type': 'image/svg+xml' });
+    res.end('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#001736"/><text x="16" y="22" text-anchor="middle" font-size="18" fill="white">&#x2693;</text></svg>');
+    return;
+  }
+
   // All other endpoints require the shared proxy secret
+  // Exempt: page load routes (no secret available yet), health, favicon
   const PROXY_SECRET = process.env.PROXY_SECRET || '';
-  if (PROXY_SECRET && req.headers['x-proxy-secret'] !== PROXY_SECRET) {
+  const exemptPaths  = ['/', '/index.html', '/health', '/favicon.ico'];
+  if (PROXY_SECRET && !exemptPaths.includes(req.url) && req.headers['x-proxy-secret'] !== PROXY_SECRET) {
     res.writeHead(401, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Unauthorized' }));
     return;
