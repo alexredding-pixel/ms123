@@ -1581,6 +1581,12 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
         <option value="CPT">CPT</option>
         <option value="EXW">EXW</option>
       </select>
+      <select id="analyticsCurrency" onchange="renderAnalytics()" style="border:1px solid var(--outline-variant);border-radius:8px;padding:6px 10px;font-size:0.8125rem;font-family:inherit;background:var(--surface-container-highest);color:var(--on-surface);cursor:pointer;">
+        <option value="">All currencies</option>
+        <option value="GBP">GBP £</option>
+        <option value="EUR">EUR €</option>
+        <option value="USD">USD $</option>
+      </select>
       <div id="analyticsDataNote" style="margin-left:auto;font-size:0.75rem;color:var(--outline);"></div>
     </div>
 
@@ -2195,6 +2201,7 @@ function makeShipment(overrides) {
     localCost: '', localCcy: 'USD',
     freightCost: '', freightCcy: 'USD',
     destCost: '', destCcy: 'USD',
+    fxRates: {}, convertedTotal: null, convertedCcy: null,
     // AIS live fields (populated by WebSocket)
     status: 'In Transit', // default until AIS updates
     lat: null, lng: null, speed: null, course: null,
@@ -2267,6 +2274,7 @@ function shipmentToRow(s) {
       localCost: s.localCost, localCcy: s.localCcy,
       freightCost: s.freightCost, freightCcy: s.freightCcy,
       destCost: s.destCost, destCcy: s.destCcy,
+      fxRates: s.fxRates || {}, convertedTotal: s.convertedTotal || null, convertedCcy: s.convertedCcy || null,
       timeline: s.timeline,
       status: s.status, lat: s.lat, lng: s.lng,
       speed: s.speed, course: s.course,
@@ -3960,10 +3968,22 @@ const analyticsCharts = {}; // cache Chart instances to destroy on re-render
 function getCompletedShipments() {
   const containerFilter = document.getElementById('analyticsContainer')?.value || '';
   const incoFilter      = document.getElementById('analyticsIncoterms')?.value || '';
+  const ccyFilter       = document.getElementById('analyticsCurrency')?.value  || '';
   return shipments.filter(s => {
     if (!s.completedAt) return false;
     if (containerFilter && !(s.cargo || '').startsWith(containerFilter)) return false;
     if (incoFilter && s.incoterms !== incoFilter) return false;
+    if (ccyFilter) {
+      // Filter to shipments where convertedTotal exists in the chosen currency,
+      // OR where all costs are natively in that currency (no conversion needed)
+      const nativeSameCcy = [
+        { amt: s.localCost, ccy: s.localCcy },
+        { amt: s.freightCost, ccy: s.freightCcy },
+        { amt: s.destCost, ccy: s.destCcy },
+      ].filter(c => c.amt && Number(c.amt) > 0).every(c => c.ccy === ccyFilter);
+      const hasConvertedTotal = s.convertedTotal && s.convertedCcy === ccyFilter;
+      if (!nativeSameCcy && !hasConvertedTotal) return false;
+    }
     return true;
   });
 }
@@ -4127,24 +4147,31 @@ function renderPortDelays(completed) {
 // ── Chart 3: Carrier Cost Comparison ──────────────────────────────────────────
 function renderCarrierCost(completed) {
   destroyChart('carrierCost');
-  // Only include shipments where all costs share the same currency (apples-to-apples)
+  // Include shipments with a convertedTotal OR where all costs share same native currency
   const eligible = completed.filter(s => {
     if (!s.carrier) return false;
+    if (s.convertedTotal && s.convertedCcy) return true;
     const costs = [
       { amt: s.localCost, ccy: s.localCcy },
       { amt: s.freightCost, ccy: s.freightCcy },
       { amt: s.destCost, ccy: s.destCcy },
     ].filter(c => c.amt && Number(c.amt) > 0);
     if (costs.length === 0) return false;
-    const ccys = [...new Set(costs.map(c => c.ccy))];
-    return ccys.length === 1; // all same currency
+    return [...new Set(costs.map(c => c.ccy))].length === 1;
   });
 
   const byCarrier = {};
   eligible.forEach(s => {
-    const total = [s.localCost, s.freightCost, s.destCost]
-      .filter(Boolean).reduce((sum, a) => sum + Number(a), 0);
-    const ccy = s.destCcy || s.freightCcy || s.localCcy || '';
+    // Use convertedTotal if available, else sum native same-currency costs
+    let total, ccy;
+    if (s.convertedTotal && s.convertedCcy) {
+      total = s.convertedTotal;
+      ccy   = s.convertedCcy;
+    } else {
+      total = [s.localCost, s.freightCost, s.destCost]
+        .filter(Boolean).reduce((sum, a) => sum + Number(a), 0);
+      ccy = s.destCcy || s.freightCcy || s.localCcy || '';
+    }
     if (!byCarrier[s.carrier]) byCarrier[s.carrier] = { total: 0, count: 0, ccy };
     byCarrier[s.carrier].total += total;
     byCarrier[s.carrier].count++;
@@ -4195,22 +4222,28 @@ function renderCostPerPallet(completed) {
   destroyChart('costPerPallet');
   const eligible = completed.filter(s => {
     if (!s.carrier || !s.pallets || Number(s.pallets) <= 0) return false;
+    if (s.convertedTotal && s.convertedCcy) return true;
     const costs = [
       { amt: s.localCost, ccy: s.localCcy },
       { amt: s.freightCost, ccy: s.freightCcy },
       { amt: s.destCost, ccy: s.destCcy },
     ].filter(c => c.amt && Number(c.amt) > 0);
     if (costs.length === 0) return false;
-    const ccys = [...new Set(costs.map(c => c.ccy))];
-    return ccys.length === 1;
+    return [...new Set(costs.map(c => c.ccy))].length === 1;
   });
 
   const byCarrier = {};
   eligible.forEach(s => {
-    const total = [s.localCost, s.freightCost, s.destCost]
-      .filter(Boolean).reduce((sum, a) => sum + Number(a), 0);
+    let total, ccy;
+    if (s.convertedTotal && s.convertedCcy) {
+      total = s.convertedTotal;
+      ccy   = s.convertedCcy;
+    } else {
+      total = [s.localCost, s.freightCost, s.destCost]
+        .filter(Boolean).reduce((sum, a) => sum + Number(a), 0);
+      ccy = s.destCcy || s.freightCcy || s.localCcy || '';
+    }
     const cpp = total / Number(s.pallets);
-    const ccy = s.destCcy || s.freightCcy || s.localCcy || '';
     if (!byCarrier[s.carrier]) byCarrier[s.carrier] = { vals: [], ccy };
     byCarrier[s.carrier].vals.push(cpp);
   });
@@ -4262,86 +4295,113 @@ function renderCostPerPallet(completed) {
 // -- LOG COST SECTION ---------------------------------------------------------
 // Builds the cost breakdown with currency conversion to destCcy.
 // The user provides manual FX rates for any non-destCcy costs.
-function buildCostSection(s, rowIdx) {
+// getFxRates: returns { CCY: rate } stored on the shipment itself
+function getFxRates(s) {
+  return s.fxRates || {};
+}
+
+// computeTotal: returns { total, ccy, allConverted } using stored FX rates
+function computeTotal(s) {
   const destCcy = s.destCcy || 'USD';
   const costs = [
-    { label: 'Local Cost',   amt: s.localCost,   ccy: s.localCcy   || 'USD' },
-    { label: 'Sea Freight',  amt: s.freightCost, ccy: s.freightCcy || 'USD' },
-    { label: 'Dest. Clearance', amt: s.destCost, ccy: s.destCcy    || 'USD' },
+    { amt: s.localCost,   ccy: s.localCcy   || 'USD' },
+    { amt: s.freightCost, ccy: s.freightCcy || 'USD' },
+    { amt: s.destCost,    ccy: s.destCcy    || 'USD' },
   ].filter(c => c.amt && Number(c.amt) > 0);
 
-  if (costs.length === 0) return '';
-
-  const fxKey  = 'ms_fx_' + rowIdx;
-  const stored = (() => { try { return JSON.parse(sessionStorage.getItem(fxKey) || '{}'); } catch(e) { return {}; } })();
-
-  // Build per-cost rows with inline FX input for foreign currencies
-  const rows = costs.map(c => {
-    const isSame = c.ccy === destCcy;
-    const fxRate = stored[c.ccy] || '';
-    const converted = (fxRate && !isSame) ? (Number(c.amt) * Number(fxRate)).toFixed(0) : '';
-    return '<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--surface-container-high);">'
-      + '<div style="flex:1;font-size:0.8125rem;color:var(--on-surface-variant);">' + esc(c.label) + '</div>'
-      + '<div style="font-size:0.8125rem;font-weight:600;color:var(--on-surface);white-space:nowrap;">'
-      + esc(c.ccy) + ' ' + Number(c.amt).toLocaleString()
-      + '</div>'
-      + (!isSame
-        ? '<div style="display:flex;align-items:center;gap:4px;font-size:0.75rem;color:var(--outline);">'
-          + '<span>×</span>'
-          + '<input type="number" min="0" step="0.0001" placeholder="FX rate" value="' + esc(fxRate) + '"'
-          + ' data-ccy="' + esc(c.ccy) + '" data-fxkey="' + esc(fxKey) + '"'
-          + ' onchange="updateFxRate(this)"'
-          + ' onclick="event.stopPropagation()"'
-          + ' style="width:72px;border:1px solid var(--outline-variant);border-radius:6px;padding:3px 6px;font-size:0.75rem;font-family:inherit;background:var(--surface-container-high);color:var(--on-surface);outline:none;"/>'
-          + (converted ? '<span style="color:var(--on-surface);font-weight:600;white-space:nowrap;">= ' + esc(destCcy) + ' ' + Number(converted).toLocaleString() + '</span>' : '')
-          + '</div>'
-        : '')
-      + '</div>';
-  }).join('');
-
-  // Compute total in destCcy (native + converted)
+  const fx = getFxRates(s);
   let total = 0;
   let allConverted = true;
   costs.forEach(c => {
     if (c.ccy === destCcy) {
       total += Number(c.amt);
     } else {
-      const rate = stored[c.ccy];
+      const rate = fx[c.ccy + '_' + destCcy];
       if (rate) total += Number(c.amt) * Number(rate);
       else allConverted = false;
     }
   });
+  return { total: Math.round(total), ccy: destCcy, allConverted, hasCosts: costs.length > 0 };
+}
 
-  const totalHtml = total > 0
-    ? '<div style="display:flex;align-items:center;justify-content:space-between;padding-top:8px;margin-top:2px;">'
+function buildCostSection(s, rowIdx) {
+  const destCcy = s.destCcy || 'USD';
+  const costs = [
+    { label: 'Local Cost',        amt: s.localCost,   ccy: s.localCcy   || 'USD' },
+    { label: 'Sea Freight',       amt: s.freightCost, ccy: s.freightCcy || 'USD' },
+    { label: 'Dest. Clearance',   amt: s.destCost,    ccy: s.destCcy    || 'USD' },
+  ].filter(c => c.amt && Number(c.amt) > 0);
+  if (costs.length === 0) return '';
+
+  const fx = getFxRates(s);
+
+  const rows = costs.map(c => {
+    const isSame = c.ccy === destCcy;
+    const fxKey  = c.ccy + '_' + destCcy;
+    const rate   = fx[fxKey] || '';
+    const converted = (rate && !isSame) ? Math.round(Number(c.amt) * Number(rate)).toLocaleString() : '';
+    return '<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--surface-container-high);">'
+      + '<div style="flex:1;font-size:0.8125rem;color:var(--on-surface-variant);">' + esc(c.label) + '</div>'
+      + '<div style="font-size:0.8125rem;font-weight:600;color:var(--on-surface);white-space:nowrap;">'
+      + esc(c.ccy) + ' ' + Number(c.amt).toLocaleString() + '</div>'
+      + (!isSame
+        ? '<div style="display:flex;align-items:center;gap:4px;font-size:0.75rem;color:var(--outline);">'
+          + '<span>×</span>'
+          + '<input type="number" min="0" step="0.0001" placeholder="rate" value="' + esc(String(rate)) + '"'
+          + ' data-sid="' + esc(s.id) + '" data-fxkey="' + esc(fxKey) + '"'
+          + ' onchange="updateFxRate(this)" onclick="event.stopPropagation()"'
+          + ' style="width:68px;border:1px solid var(--outline-variant);border-radius:6px;padding:3px 6px;'
+          + 'font-size:0.75rem;font-family:inherit;background:var(--surface-container-high);color:var(--on-surface);outline:none;"/>'
+          + (converted ? '<span style="color:var(--on-surface);font-weight:600;white-space:nowrap;">= ' + esc(destCcy) + ' ' + converted + '</span>' : '')
+          + '</div>'
+        : '')
+      + '</div>';
+  }).join('');
+
+  const t = computeTotal(s);
+  const totalHtml = t.hasCosts && t.total > 0
+    ? '<div style="display:flex;align-items:center;justify-content:space-between;padding-top:8px;margin-top:4px;">'
       + '<div style="font-size:0.75rem;font-weight:800;text-transform:uppercase;letter-spacing:0.08em;color:var(--outline);">'
-      + 'Total ' + (allConverted ? '' : '(partial)') + '</div>'
+      + 'Total' + (t.allConverted ? '' : ' <span style="font-weight:400;font-size:0.6875rem;">(partial)</span>') + '</div>'
       + '<div style="font-size:1rem;font-weight:900;color:var(--primary);">'
-      + esc(destCcy) + ' ' + Math.round(total).toLocaleString()
-      + '</div></div>'
+      + esc(t.ccy) + ' ' + t.total.toLocaleString() + '</div>'
+      + '</div>'
     : '';
 
   return '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--surface-container-high);">'
-    + '<div style="font-size:0.625rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:var(--outline);margin-bottom:6px;">Costs'
-    + ' <span style="font-weight:400;text-transform:none;letter-spacing:0;">— converting to ' + esc(destCcy) + '</span></div>'
-    + rows
-    + totalHtml
-    + (!allConverted
-      ? '<div style="font-size:0.6875rem;color:var(--outline);margin-top:6px;">Enter FX rates above to include all costs in total</div>'
+    + '<div style="font-size:0.625rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:var(--outline);margin-bottom:6px;">'
+    + 'Costs <span style="font-weight:400;text-transform:none;letter-spacing:0;">— converting to ' + esc(destCcy) + '</span></div>'
+    + rows + totalHtml
+    + (!t.allConverted && t.hasCosts
+      ? '<div style="font-size:0.6875rem;color:var(--outline);margin-top:4px;">Enter FX rates above to complete the total</div>'
       : '')
     + '</div>';
 }
 
-function updateFxRate(input) {
-  const fxKey = input.dataset.fxkey;
-  const ccy   = input.dataset.ccy;
-  const rate  = input.value;
-  try {
-    const stored = JSON.parse(sessionStorage.getItem(fxKey) || '{}');
-    stored[ccy] = rate;
-    sessionStorage.setItem(fxKey, JSON.stringify(stored));
-  } catch(e) {}
-  // Re-render the log to reflect new rate
+async function updateFxRate(input) {
+  const sid   = input.dataset.sid;
+  const fxKey = input.dataset.fxkey; // e.g. "USD_GBP"
+  const rate  = input.value ? Number(input.value) : null;
+
+  // Find shipment and update fxRates in memory
+  const s = shipments.find(sh => sh.id === sid);
+  if (!s) return;
+  if (!s.fxRates) s.fxRates = {};
+  if (rate) s.fxRates[fxKey] = rate;
+  else delete s.fxRates[fxKey];
+
+  // Recompute and store converted total on the shipment
+  const t = computeTotal(s);
+  if (t.allConverted && t.total > 0) {
+    s.convertedTotal = t.total;
+    s.convertedCcy   = t.ccy;
+  } else {
+    s.convertedTotal = null;
+    s.convertedCcy   = null;
+  }
+
+  // Persist to Supabase
+  await saveShipments();
   renderLog();
 }
 
