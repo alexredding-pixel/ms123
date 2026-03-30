@@ -279,10 +279,46 @@ function connectToAIS() {
 
 // ── HTTP SERVER ───────────────────────────────────────────────────────────────
 const httpServer = http.createServer((req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Origin', 'https://ms123-production.up.railway.app');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-proxy-secret, Authorization');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
+
+  // /config is authenticated via Supabase JWT — handled before proxy secret check
+  if (req.method === 'GET' && req.url === '/config') {
+    const authHeader = req.headers['authorization'] || '';
+    if (!authHeader.startsWith('Bearer ')) {
+      res.writeHead(401); res.end(JSON.stringify({ error: 'Unauthorized' })); return;
+    }
+    const sbToken = authHeader.replace('Bearer ', '');
+    const vReq = https.request(SUPABASE_URL + '/auth/v1/user', {
+      method: 'GET',
+      headers: { 'apikey': process.env.SUPABASE_ANON_KEY || '', 'Authorization': 'Bearer ' + sbToken }
+    }, (r) => {
+      let d = ''; r.on('data', c => d += c);
+      r.on('end', () => {
+        if (r.statusCode === 200) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ proxySecret: process.env.PROXY_SECRET || '' }));
+        } else {
+          res.writeHead(401); res.end(JSON.stringify({ error: 'Invalid session' }));
+        }
+      });
+    });
+    vReq.on('error', () => { res.writeHead(500); res.end('{}'); });
+    vReq.end();
+    return;
+  }
+
+  // All other endpoints require the shared proxy secret
+  const PROXY_SECRET = process.env.PROXY_SECRET || '';
+  if (PROXY_SECRET && req.headers['x-proxy-secret'] !== PROXY_SECRET) {
+    res.writeHead(401, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Unauthorized' }));
+    return;
+  }
 
   if (req.method === 'GET' && req.url === '/events') {
     loadEvents().then(events => {

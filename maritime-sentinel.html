@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' https://*.supabase.co https://ms123-production.up.railway.app wss://ms123-production.up.railway.app; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https://*.tile.openstreetmap.org https://*.basemaps.cartocdn.com https://lh3.googleusercontent.com; connect-src 'self' https://*.supabase.co https://ms123-production.up.railway.app wss://ms123-production.up.railway.app https://api.anthropic.com;">
 <title>Maritime Sentinel | Container Tracking Dashboard</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -2082,7 +2083,6 @@ const KNOWN_VESSELS = {
   '218545000': { name: 'BERLIN EXPRESS',     flag: 'Germany',     imo: '9815478' },
   '218442000': { name: 'HAMBURG EXPRESS',    flag: 'Germany',     imo: '9815492' },
   // ONE
-  '431528000': { name: 'ONE MAGNIFICENCE',   flag: 'Japan',	  imo: '9424900' },
   '477548900': { name: 'ONE INNOVATION',     flag: 'Hong Kong',   imo: '9806081' },
   '477549100': { name: 'ONE INSPIRATION',    flag: 'Hong Kong',   imo: '9806093' },
   // ZIM
@@ -2118,6 +2118,18 @@ function makeShipment(overrides) {
 }
 
 // Load saved bookings from localStorage, fall back to demo data
+// ── SECURITY HELPERS ─────────────────────────────────────────────────────────
+// Escape user/external data before inserting into innerHTML
+function esc(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
+}
+
 // ── SUPABASE ─────────────────────────────────────────────────────────────────
 const SB_URL = 'https://nkxvacdhwimhemnmcpxe.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5reHZhY2Rod2ltaGVtbm1jcHhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2MjQxMTgsImV4cCI6MjA5MDIwMDExOH0.hc1kttUnPXg62yeo6xrRSXcily05zLA-Qo6AtDbYEhE';
@@ -2138,6 +2150,11 @@ async function sbFetch(method, table, body, params) {
       body: body ? JSON.stringify(body) : undefined,
     });
     if (res.status === 204 || res.status === 201) return [];
+    if (res.status === 401 || res.status === 403) {
+      // Session expired or invalid — force re-login
+      if (currentSession) { currentSession = null; localStorage.removeItem('ms_session'); showLoginScreen(); }
+      return null;
+    }
     return res.ok ? await res.json() : null;
   } catch(e) { return null; }
 }
@@ -2654,7 +2671,7 @@ function refreshDetailPanel(idx) {
     liveSection.innerHTML = '';
     if (s.speed) liveSection.innerHTML += detailRow('Speed', s.speed);
     if (s.course) liveSection.innerHTML += detailRow('Course', s.course);
-    if (s.destination) liveSection.innerHTML += detailRow('AIS Destination', s.destination);
+    if (s.destination) liveSection.innerHTML += detailRow('AIS Destination', esc(s.destination));
     if (s.lastPortStop) {
       liveSection.innerHTML += detailRow('Last port stop', s.lastPortStop);
     }
@@ -2836,7 +2853,7 @@ function openDetail(idx) {
     liveSection.innerHTML = '';
     if (s.speed) liveSection.innerHTML += detailRow('Speed', s.speed);
     if (s.course) liveSection.innerHTML += detailRow('Course', s.course);
-    if (s.destination) liveSection.innerHTML += detailRow('AIS Destination', s.destination);
+    if (s.destination) liveSection.innerHTML += detailRow('AIS Destination', esc(s.destination));
     if (s.eta && s.eta !== 'Awaiting live data...' && !s.eta.startsWith('ATA:')) {
       const label = destMatchesFinal(s) ? 'AIS ETA (your port)' : 'AIS ETA (next port)';
       liveSection.innerHTML += detailRow(label, s.eta.replace('ETA: ', ''));
@@ -4113,7 +4130,7 @@ async function loadLogDocs(rowIdx, row) {
       '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--surface-container-high);">'
       + '<span class="material-symbols-outlined" style="font-size:16px;color:var(--secondary);">picture_as_pdf</span>'
       + '<div style="flex:1;min-width:0;">'
-      + '<div style="font-size:0.8125rem;font-weight:600;color:var(--on-surface);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + doc.filename + '</div>'
+      + '<div style="font-size:0.8125rem;font-weight:600;color:var(--on-surface);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(doc.filename) + '</div>'
       + '<div style="font-size:0.6875rem;color:var(--on-surface-variant);">' + DOC_LABELS[doc.doc_type]
         + (doc.size_bytes ? ' · ' + Math.round(doc.size_bytes/1024) + ' KB' : '') + '</div>'
       + '</div>'
@@ -4240,6 +4257,7 @@ function doLogout() {
   currentSession = null;
   localStorage.removeItem('ms_session');
   localStorage.removeItem('ms_shipments_cache');
+  sessionStorage.removeItem('ms_proxy_secret');
   shipments = [];
   showLoginScreen();
 }
@@ -4254,9 +4272,19 @@ function hideLoginScreen() {
   document.body.style.overflow = '';
 }
 
-function onAuthSuccess() {
+async function onAuthSuccess() {
   hideLoginScreen();
-  // Update sbFetch to use session token from now on
+  // Fetch proxy secret from Railway (authenticated endpoint)
+  try {
+    const PROXY = 'https://ms123-production.up.railway.app';
+    const cfgRes = await fetch(PROXY + '/config', {
+      headers: { 'Authorization': 'Bearer ' + currentSession.access_token }
+    });
+    if (cfgRes.ok) {
+      const cfg = await cfgRes.json();
+      if (cfg.proxySecret) sessionStorage.setItem('ms_proxy_secret', cfg.proxySecret);
+    }
+  } catch(e) {}
   // Sync shipments with authenticated session
   syncShipmentsFromSupabase();
   // Show user email in sidebar
@@ -4434,7 +4462,7 @@ async function renderDocSection(s) {
     return '<div class="doc-row" data-doctype="' + t + '">'
       + '<span class="material-symbols-outlined">picture_as_pdf</span>'
       + '<div style="flex:1;min-width:0;">'
-      + '<div class="doc-name">' + doc.filename + '</div>'
+      + '<div class="doc-name">' + esc(doc.filename) + '</div>'
       + '<div class="doc-type">' + DOC_LABELS[t]
         + (kb ? ' · ' + kb : '') + (date ? ' · ' + date : '') + '</div>'
       + '</div>'
@@ -4522,7 +4550,7 @@ async function parseBillOfLading(file) {
     const PROXY = 'https://ms123-production.up.railway.app';
     const response = await fetch(PROXY + '/parse-bl', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-proxy-secret': getProxySecret() },
       body: JSON.stringify({ pdf: base64 })
     });
 
@@ -4574,8 +4602,8 @@ function showExtractedFields(p) {
   ];
   grid.innerHTML = fields.filter(([,v]) => v !== null && v !== undefined).map(([label, val]) =>
     '<div style="padding:8px 12px;background:var(--surface-container-lowest);border-radius:8px;">'
-    + '<div style="font-size:0.5625rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:var(--outline);">' + label + '</div>'
-    + '<div style="font-size:0.8125rem;font-weight:600;color:var(--on-surface);margin-top:2px;">' + val + '</div>'
+    + '<div style="font-size:0.5625rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:var(--outline);">' + esc(label) + '</div>'
+    + '<div style="font-size:0.8125rem;font-weight:600;color:var(--on-surface);margin-top:2px;">' + esc(val) + '</div>'
     + '</div>'
   ).join('');
   document.getElementById('blExtracted').style.display = 'block';
