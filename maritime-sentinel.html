@@ -271,6 +271,11 @@ html, body {
   scrollbar-width: thin;
   scrollbar-color: var(--outline-variant) transparent;
 }
+/* Hide scrollbar on full-page screens without disabling scroll */
+#logScreen::-webkit-scrollbar,
+#analyticsScreen::-webkit-scrollbar,
+#settingsScreen::-webkit-scrollbar { display: none; }
+#logScreen, #analyticsScreen, #settingsScreen { -ms-overflow-style: none; }
 
 .content {
   padding: 28px 32px 40px;
@@ -1507,7 +1512,7 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
 </main>
 
 <!-- LOG SCREEN -->
-<div id="logScreen" style="display:none;flex:1;overflow-y:auto;padding:56px 40px 32px;background:var(--surface-container-lowest);">
+<div id="logScreen" style="display:none;margin-left:248px;height:100vh;overflow-y:auto;overflow-x:hidden;scrollbar-width:none;padding:80px 40px 48px;background:var(--surface-container-lowest);box-sizing:border-box;">
   <div style="max-width:1100px;margin:0 auto;">
 
     <div style="margin-bottom:28px;">
@@ -1551,7 +1556,7 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
 </div>
 
 <!-- SETTINGS SCREEN -->
-<div id="analyticsScreen" style="display:none;flex:1;overflow-y:auto;padding:56px 40px 40px;background:var(--surface-container-lowest);">
+<div id="analyticsScreen" style="display:none;margin-left:248px;height:100vh;overflow-y:auto;overflow-x:hidden;scrollbar-width:none;padding:80px 40px 48px;background:var(--surface-container-lowest);box-sizing:border-box;">
   <div style="max-width:1100px;margin:0 auto;">
     <div style="margin-bottom:28px;">
       <h1 style="font-size:1.5rem;font-weight:900;color:var(--primary);margin:0 0 4px;">Analytics</h1>
@@ -1627,7 +1632,7 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
   </div>
 </div>
 
-<div id="settingsScreen" style="display:none;flex:1;overflow-y:auto;padding:56px 40px 32px;background:var(--surface-container-lowest);">
+<div id="settingsScreen" style="display:none;margin-left:248px;height:100vh;overflow-y:auto;overflow-x:hidden;scrollbar-width:none;padding:80px 40px 48px;background:var(--surface-container-lowest);box-sizing:border-box;">
   <div style="max-width:640px;margin:0 auto;">
 
     <div style="margin-bottom:32px;">
