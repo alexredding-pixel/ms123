@@ -617,12 +617,14 @@ async function bootstrapMmsis() {
 
 // ── START ─────────────────────────────────────────────────────────────────────
 loadConfig();
+console.log('[config] apiKey after loadConfig: ' + (apiKey ? 'set (' + apiKey.slice(0,8) + '...)' : 'EMPTY'));
 httpServer.listen(PROXY_PORT, async () => {
   console.log('\n=== Maritime Sentinel Proxy ===');
   console.log('    Port: ' + PROXY_PORT);
-  console.log('    GET  /events    -> voyage event log');
-  console.log('    GET  /health    -> status');
-  console.log('    POST /subscribe -> update vessels');
+  console.log('    AIS_API_KEY set: ' + (process.env.AIS_API_KEY ? 'YES (' + process.env.AIS_API_KEY.slice(0,8) + '...)' : 'NO'));
+  console.log('    SUPABASE_SERVICE_KEY set: ' + (process.env.SUPABASE_SERVICE_KEY ? 'YES' : 'NO'));
+  console.log('    PROXY_SECRET set: ' + (process.env.PROXY_SECRET ? 'YES' : 'NO'));
+  console.log('    ANTHROPIC_API_KEY set: ' + (process.env.ANTHROPIC_API_KEY ? 'YES' : 'NO'));
   console.log('');
 
   // Always try to load MMSIs from Supabase on startup
