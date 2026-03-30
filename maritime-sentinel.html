@@ -4716,7 +4716,8 @@ async function onAuthSuccess() {
   if (roleEl && currentSession?.user?.email) {
     roleEl.textContent = currentSession.user.email;
   }
-  // Now that proxy secret is loaded, auto-connect AIS
+  // Now that proxy secret is loaded, fetch positions and auto-connect AIS
+  fetchLastKnownPositions();
   autoConnectIfProxyReady();
 }
 
@@ -5277,8 +5278,7 @@ window.addEventListener('load', async () => {
   renderTable();
   syncShipmentsFromSupabase();
 
-  // Fetch last-known positions from proxy (persisted 24/7 by Railway)
-  fetchLastKnownPositions();
+  // Last-known positions fetched in onAuthSuccess after proxy secret loads
 
   searchClear.addEventListener('click', () => {
     tableSearch = '';
