@@ -4308,6 +4308,8 @@ async function onAuthSuccess() {
   if (roleEl && currentSession?.user?.email) {
     roleEl.textContent = currentSession.user.email;
   }
+  // Now that proxy secret is loaded, auto-connect AIS
+  autoConnectIfProxyReady();
 }
 
 // Auto-refresh session every 45 minutes
@@ -5251,9 +5253,7 @@ window.addEventListener('load', async () => {
   // Init Leaflet map immediately for the preview
   initLeafletMap();
 
-  // Check if proxy is already connected (AIS_API_KEY set server-side)
-  // If so, open WebSocket to proxy and update badge — no key needed from browser
-  autoConnectIfProxyReady();
+  // AIS auto-connect happens in onAuthSuccess() after proxy secret is loaded
 });
 
 async function autoConnectIfProxyReady() {
