@@ -592,16 +592,63 @@ wss.on('connection', browserSocket => {
 });
 
 
+// ── MMSI BOOTSTRAP FROM SUPABASE ──────────────────────────────────────────────
+// Loads tracked MMSIs directly from shipments table so the proxy can start
+// tracking immediately on boot, without waiting for a browser connection.
+async function bootstrapMmsis() {
+  try {
+    const res = await supabase('GET', 'shipments', null, 'select=data');
+    if (!res.ok || !Array.isArray(res.data)) return;
+    const mmsis = res.data
+      .map(row => row.data && row.data.mmsi)
+      .filter(m => m && /^\d{7,9}$/.test(String(m)));
+    const unique = [...new Set(mmsis.map(String))];
+    if (unique.length > 0) {
+      trackedMmsis = unique;
+      saveConfig();
+      console.log('[bootstrap] Loaded ' + unique.length + ' MMSIs from Supabase: ' + unique.join(', '));
+    } else {
+      console.log('[bootstrap] No MMSIs found in Supabase shipments');
+    }
+  } catch(e) {
+    console.error('[bootstrap] Error loading MMSIs:', e.message);
+  }
+}
+
 // ── START ─────────────────────────────────────────────────────────────────────
 loadConfig();
-httpServer.listen(PROXY_PORT, () => {
-  console.log(`\n=== Maritime Sentinel Proxy ===`);
-  console.log(`    Port: ${PROXY_PORT}`);
-  console.log(`    GET  /events    -> voyage event log`);
-  console.log(`    GET  /health    -> status`);
-  console.log(`    POST /subscribe -> update vessels`);
+httpServer.listen(PROXY_PORT, async () => {
+  console.log('\n=== Maritime Sentinel Proxy ===');
+  console.log('    Port: ' + PROXY_PORT);
+  console.log('    GET  /events    -> voyage event log');
+  console.log('    GET  /health    -> status');
+  console.log('    POST /subscribe -> update vessels');
   console.log('');
-  if (apiKey && trackedMmsis.length > 0) connectToAIS();
-  else console.log('    Waiting for first browser connection...\n');
 
+  // Always try to load MMSIs from Supabase on startup
+  await bootstrapMmsis();
+
+  if (apiKey) {
+    if (trackedMmsis.length > 0) {
+      console.log('[start] Auto-connecting to AIS with ' + trackedMmsis.length + ' vessels...');
+      connectToAIS();
+    } else {
+      console.log('[start] AIS key set but no vessels to track yet — waiting for first browser connection');
+    }
+  } else {
+    console.log('[start] No AIS_API_KEY set — waiting for browser to provide key');
+  }
 });
+
+// Re-bootstrap MMSIs from Supabase every 5 minutes to pick up new shipments
+// added while the proxy is running (without needing a browser connection)
+setInterval(async () => {
+  const prevCount = trackedMmsis.length;
+  await bootstrapMmsis();
+  if (trackedMmsis.length !== prevCount) {
+    console.log('[interval] MMSI list changed — reconnecting AIS');
+    if (aisSocket) { aisSocket.close(); aisSocket = null; }
+    clearTimeout(reconnectTimer);
+    if (apiKey) setTimeout(connectToAIS, 1000);
+  }
+}, 5 * 60 * 1000);
