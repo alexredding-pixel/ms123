@@ -524,6 +524,12 @@ wss.on('connection', browserSocket => {
     // overwrites the proxy's up-to-date subscription.
     try {
       const sub = JSON.parse(data.toString());
+      // Validate proxy secret in WebSocket messages
+      const PROXY_SECRET = process.env.PROXY_SECRET || '';
+      if (PROXY_SECRET && sub._secret !== PROXY_SECRET) {
+        console.log('[ws] Rejected message — invalid secret');
+        return;
+      }
       if (sub.APIKey) {
         const newKey  = sub.APIKey !== apiKey;
         const newMmsis = JSON.stringify((sub.FiltersShipMMSI||[]).slice().sort()) !==

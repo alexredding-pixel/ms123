@@ -2302,7 +2302,8 @@ function connectAIS(apiKey) {
     const sub = {
       "APIKey": apiKey,
       "BoundingBoxes": [[[-90, -180], [90, 180]]],
-      "FiltersShipMMSI": TRACKED_MMSIS
+      "FiltersShipMMSI": TRACKED_MMSIS,
+      "_secret": getProxySecret()
     };
     const subStr = JSON.stringify(sub);
     logDebug('Sending sub: ' + subStr.slice(0, 160));
@@ -3469,7 +3470,7 @@ async function notifyProxy(apiKey, mmsis) {
   try {
     await fetch(PROXY_BASE + '/subscribe', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-proxy-secret': getProxySecret() },
       body: JSON.stringify({ apiKey, mmsis }),
     });
     console.log('[proxy] Updated server tracking:', mmsis);
@@ -3489,7 +3490,7 @@ const PROXY_BASE = location.protocol === 'file:'
 
 async function fetchLastKnownPositions() {
   try {
-    const res = await fetch(PROXY_BASE + '/positions');
+    const res = await fetch(PROXY_BASE + '/positions', { headers: { 'x-proxy-secret': getProxySecret() } });
     if (!res.ok) return;
     const positions = await res.json(); // { mmsi: { lat, lng, sog, cog, navStatus, timestamp } }
 
@@ -3527,7 +3528,7 @@ async function fetchLastKnownPositions() {
 
 async function fetchVoyageEvents() {
   try {
-    const res = await fetch(PROXY_BASE + '/events');
+    const res = await fetch(PROXY_BASE + '/events', { headers: { 'x-proxy-secret': getProxySecret() } });
     if (!res.ok) return;
     const events = await res.json();
     if (!Array.isArray(events) || events.length === 0) return;
@@ -4282,9 +4283,18 @@ async function onAuthSuccess() {
     });
     if (cfgRes.ok) {
       const cfg = await cfgRes.json();
-      if (cfg.proxySecret) sessionStorage.setItem('ms_proxy_secret', cfg.proxySecret);
+      if (cfg.proxySecret) {
+        sessionStorage.setItem('ms_proxy_secret', cfg.proxySecret);
+        console.log('[auth] Proxy secret loaded');
+      } else {
+        console.warn('[auth] /config returned no proxySecret — check SUPABASE_ANON_KEY env var on Railway');
+      }
+    } else {
+      console.warn('[auth] /config failed:', cfgRes.status, '— proxy requests will be rejected');
     }
-  } catch(e) {}
+  } catch(e) {
+    console.warn('[auth] Could not reach /config:', e.message);
+  }
   // Sync shipments with authenticated session
   syncShipmentsFromSupabase();
   // Show user email in sidebar
