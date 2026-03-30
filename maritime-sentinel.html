@@ -2420,7 +2420,10 @@ function handleAISMessage(msg) {
       && pr.Sog != null && pr.Sog < 0.5;
     const wasUnderway = prevStatus === 'In Transit';
     if (nowInPort && wasUnderway && s.destination) {
-      logArrivalEvent(s);
+      // Pass AIS message timestamp so ATA reflects when vessel actually arrived,
+      // not when the browser happened to receive the message
+      const aisTimestamp = meta.time_utc || meta.TimeUtc || null;
+      logArrivalEvent(s, aisTimestamp);
     }
 
     s.lastUpdate = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
@@ -2553,10 +2556,11 @@ function freezeWaypointSlip(s, oldDest) {
 }
 
 // -- ARRIVAL EVENT LOGGING ---------------------------------------------------
-function logArrivalEvent(s) {
+function logArrivalEvent(s, aisTimestamp) {
   const dest = s.destination || 'port';
   const portName = titleCase(dest);
-  const now = new Date();
+  // Use AIS message timestamp (actual arrival) rather than browser processing time
+  const now = aisTimestamp ? new Date(aisTimestamp) : new Date();
   const ataStr = now.toLocaleDateString('en-GB', {day:'2-digit', month:'short'})
     + ' ' + now.toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
 
