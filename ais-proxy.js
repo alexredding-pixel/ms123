@@ -553,22 +553,24 @@ wss.on('connection', browserSocket => {
         console.log('[ws] Rejected message — invalid secret');
         return;
       }
-      if (sub.APIKey) {
-        const newKey  = sub.APIKey !== apiKey;
-        const newMmsis = JSON.stringify((sub.FiltersShipMMSI||[]).slice().sort()) !==
+      // Only accept browser APIKey if proxy doesn't already have a server-side key
+      const browserKey = sub.APIKey && sub.APIKey !== 'server' ? sub.APIKey : '';
+      if (browserKey && !process.env.AIS_API_KEY) {
+        // No server-side key — accept from browser (legacy mode)
+        if (browserKey !== apiKey) apiKey = browserKey;
+      }
+      // Always accept MMSI list updates from browser
+      if (sub.FiltersShipMMSI?.length) {
+        const newMmsis = JSON.stringify(sub.FiltersShipMMSI.slice().sort()) !==
                          JSON.stringify(trackedMmsis.slice().sort());
-        if (newKey)  apiKey = sub.APIKey;
-        // Only adopt browser MMSIs if proxy has none yet
-        if (trackedMmsis.length === 0 && sub.FiltersShipMMSI?.length) {
+        if (newMmsis) {
           trackedMmsis = sub.FiltersShipMMSI;
-        }
-        if (newKey || (trackedMmsis.length === 0)) {
           saveConfig();
-          // If this is first connection, start AIS now
-          if (!aisSocket || aisSocket.readyState !== WebSocket.OPEN) {
-            connectToAIS();
-          }
         }
+      }
+      // Start AIS if not already running
+      if (apiKey && (!aisSocket || aisSocket.readyState !== WebSocket.OPEN)) {
+        connectToAIS();
       }
     } catch (e) {}
     // Do NOT forward subscription to aisstream — proxy manages that directly.

@@ -2300,7 +2300,8 @@ function connectAIS(apiKey) {
     // Per aisstream docs: BoundingBoxes is [[minLat, minLng], [maxLat, maxLng]]
     // We send one global box and rely entirely on FiltersShipMMSI to limit data.
     const sub = {
-      "APIKey": apiKey,
+      // If proxy has server-side AIS key, send empty APIKey — proxy uses its own
+      "APIKey": (apiKey === 'server') ? '' : apiKey,
       "BoundingBoxes": [[[-90, -180], [90, 180]]],
       "FiltersShipMMSI": TRACKED_MMSIS,
       "_secret": getProxySecret()
@@ -2358,7 +2359,7 @@ function connectAIS(apiKey) {
       return;
     }
 
-    if (!wsApiKey) return;
+    if (!wsApiKey || wsApiKey === '') return;
 
     if (messageCount > 0) {
       // Was a live session - reconnect quietly after 30s, keep showing "Live"
@@ -5250,10 +5251,30 @@ window.addEventListener('load', async () => {
   // Init Leaflet map immediately for the preview
   initLeafletMap();
 
-  // Auto-connect if key already saved
-  // AIS key is not stored locally — user must re-enter after refresh
-  // (or set AIS_API_KEY on Railway to have proxy auto-connect)
+  // Check if proxy is already connected (AIS_API_KEY set server-side)
+  // If so, open WebSocket to proxy and update badge — no key needed from browser
+  autoConnectIfProxyReady();
 });
+
+async function autoConnectIfProxyReady() {
+  try {
+    const res = await fetch(PROXY_BASE + '/health', {
+      headers: { 'x-proxy-secret': getProxySecret() }
+    });
+    if (!res.ok) return;
+    const h = await res.json();
+    if (h.aisConnected) {
+      // Proxy already has AIS connection via server-side AIS_API_KEY
+      // Connect browser WebSocket using a placeholder — proxy ignores APIKey
+      // if it already has a server-side key configured
+      wsApiKey = 'server'; // sentinel value — proxy uses its own key
+      setConnectionStatus('connecting');
+      connectAIS('server');
+    }
+  } catch(e) {
+    // Proxy unreachable — user connects manually via the badge
+  }
+}
 </script>
 </body>
 </html>
