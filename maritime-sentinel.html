@@ -2026,7 +2026,7 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
         </div>
         <div>
           <div style="font-size:0.875rem;font-weight:700;color:var(--primary);margin-bottom:4px;">AIS coverage gaps</div>
-          <div style="font-size:0.8125rem;color:var(--on-surface-variant);line-height:1.6;">Terrestrial AIS only covers ~200km from coastlines. Vessels mid-ocean won't update for days. The dashboard uses <strong>dead reckoning</strong> to estimate their current position — shown as a dimmed marker with an <span style="background:rgba(178,44,1,0.12);color:var(--secondary);padding:1px 5px;border-radius:3px;font-size:0.6875rem;font-weight:700;">EST</span> badge.</div>
+          <div style="font-size:0.8125rem;color:var(--on-surface-variant);line-height:1.6;">Terrestrial AIS only covers ~200km from coastlines. Vessels mid-ocean may not update for days. The last known position is shown on the map until a new signal is received.</div>
         </div>
       </div>
 
@@ -2700,17 +2700,7 @@ function refreshDetailPanel(idx) {
 
     if (s.lastUpdate) liveSection.innerHTML += detailRow('Last Update', s.lastUpdate);
     // Dead reckoning estimate
-    if (s.drLat) {
-      liveSection.innerHTML += detailRow(
-        'Position',
-        s.drLat.toFixed(4) + '°, ' + s.drLng.toFixed(4) + '° '
-        + '<span style="font-size:0.6875rem;font-weight:700;background:rgba(178,44,1,0.12);color:var(--secondary);padding:2px 7px;border-radius:4px;margin-left:4px;">EST</span>'
-      );
-      liveSection.innerHTML += detailRow(
-        'Out of AIS range',
-        s.drAgeMins + ' min ago · ~' + s.drDistNm + ' nm since last fix'
-      );
-    } else if (s.lat && s.lng) {
+    if (s.lat && s.lng) {
       liveSection.innerHTML += detailRow('Position', s.lat.toFixed(4) + '°, ' + s.lng.toFixed(4) + '°');
     }
     // Slip info
@@ -2985,10 +2975,9 @@ function initLeafletMap() {
 
 function addOrMoveMarker(idx) {
   const s = shipments[idx];
-  // Use dead reckoning position if vessel is out of AIS range
-  const lat = s.drLat ?? s.lat;
-  const lng = s.drLng ?? s.lng;
-  const isEstimated = s.drLat != null;
+  const lat = s.lat;
+  const lng = s.lng;
+  const isEstimated = false;
   if (lat == null || lng == null) return;
   if (!leafletMap) { initLeafletMap(); }
   if (vesselMarkers[idx]) {
@@ -3419,67 +3408,7 @@ function submitAddShipment() {
 
 
 
-// -- DEAD RECKONING ----------------------------------------------------------
-// When a vessel is out of terrestrial AIS range, project its position forward
-// from the last known fix using speed and course. Updated every minute.
-// Results are tagged as estimated so the UI can show them differently.
 
-const DR_UPDATE_INTERVAL = 60 * 1000;      // update estimate every 60s
-const DR_THRESHOLD_MS    = 10 * 60 * 1000; // start DR after 10min silence
-
-function deadReckon(s) {
-  if (!s.lat || !s.lng || !s.lastUpdateTs) return null;
-  const elapsed = Date.now() - s.lastUpdateTs;
-  if (elapsed < DR_THRESHOLD_MS) return null; // still fresh enough
-
-  // Parse speed from "14.2 kn" → 14.2
-  const sog = parseFloat(s.speed) || 0;
-  if (sog < 0.3) return null; // anchored/moored — don't project
-
-  // Parse course from "281 deg" → 281
-  const cog = parseFloat(s.course) || 0;
-
-  // Hours elapsed since last fix
-  const hours = elapsed / 3600000;
-
-  // Distance travelled in nautical miles
-  const dist = sog * hours;
-
-  // Convert course to radians
-  const cogRad = (cog * Math.PI) / 180;
-
-  // 1 nautical mile ≈ 1/60 degree latitude
-  const dLat = (dist * Math.cos(cogRad)) / 60;
-  // Longitude degrees per nm varies with latitude
-  const dLng = (dist * Math.sin(cogRad)) / (60 * Math.cos(s.lat * Math.PI / 180));
-
-  return {
-    lat:     s.lat + dLat,
-    lng:     s.lng + dLng,
-    ageMins: Math.round(elapsed / 60000),
-    distNm:  Math.round(dist),
-  };
-}
-
-function applyDeadReckoning() {
-  let changed = false;
-  shipments.forEach((s, idx) => {
-    const dr = deadReckon(s);
-    if (!dr) {
-      if (s.drLat) { delete s.drLat; delete s.drLng; changed = true; }
-      return;
-    }
-    s.drLat    = dr.lat;
-    s.drLng    = dr.lng;
-    s.drAgeMins = dr.ageMins;
-    s.drDistNm  = dr.distNm;
-    changed = true;
-
-    // Move the map marker to the estimated position (dimmed)
-    updateMapDot(idx, dr.lat, dr.lng, true); // true = estimated
-  });
-  if (changed && activeId !== null) refreshDetailPanel(activeId);
-}
 
 // -- PROXY SYNC --------------------------------------------------------------
 // Tell the proxy's persistent AIS connection about new/removed MMSIs so it
@@ -3536,97 +3465,9 @@ async function fetchLastKnownPositions() {
         + s.lat.toFixed(3) + ',' + s.lng.toFixed(3)
         + ' (' + s.lastUpdate + ')');
     });
-
-    // Start dead reckoning from restored positions
-    applyDeadReckoning();
   } catch(e) {
     console.log('[positions] Could not fetch last-known positions:', e.message);
   }
-}
-
-async function fetchVoyageEvents() {
-  try {
-    const res = await fetch(PROXY_BASE + '/events', { headers: { 'x-proxy-secret': getProxySecret() } });
-    if (!res.ok) return;
-    const events = await res.json();
-    if (!Array.isArray(events) || events.length === 0) return;
-    applyVoyageEvents(events);
-  } catch (e) {
-    console.log('[events] Could not fetch voyage history:', e.message);
-  }
-}
-
-function applyVoyageEvents(events) {
-  // Group events by MMSI, sorted oldest first
-  const byMmsi = {};
-  events.forEach(e => {
-    if (!byMmsi[e.mmsi]) byMmsi[e.mmsi] = [];
-    byMmsi[e.mmsi].push(e);
-  });
-  Object.values(byMmsi).forEach(arr =>
-    arr.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
-  );
-
-  // Apply to matching shipments
-  shipments.forEach((s, idx) => {
-    const vesselEvents = byMmsi[s.mmsi];
-    if (!vesselEvents || vesselEvents.length === 0) return;
-
-    vesselEvents.forEach(evt => {
-      const dest = evt.destination;
-      const time = evt.eta
-        ? 'ETA: ' + evt.eta.replace(/^\d{4}-/, '').replace(' UTC', ' UTC')
-        : new Date(evt.timestamp).toLocaleDateString('en-GB', {day:'2-digit',month:'short'});
-
-      // Check if this destination is already in the timeline
-      const alreadyLogged = s.timeline.some(t =>
-        t.event && t.event.toUpperCase().includes(dest.slice(0, 4))
-      );
-      if (alreadyLogged) {
-        // Update the time on the matching event if it was TBC
-        s.timeline.forEach(t => {
-          if (t.event && t.event.toUpperCase().includes(dest.slice(0, 4))) {
-            if (!t.time || t.time === 'TBC') {
-              t.time = time;
-              t.aisEta = true;
-            }
-          }
-        });
-        return;
-      }
-
-      // Is this a waypoint between loading and discharge?
-      const isDischarge = s.dest &&
-        s.dest.toUpperCase().split(/[,\s]/)[0].includes(dest.slice(0, 4));
-
-      if (isDischarge) {
-        // Update the arrival timeline event
-        const arrivalEvent = s.timeline.find(t => t.state === 'pending' &&
-          t.event && t.event.toLowerCase().includes('arriv'));
-        if (arrivalEvent) {
-          arrivalEvent.time = time;
-          arrivalEvent.aisEta = true;
-        } else {
-          s.timeline.push({ event: 'Arriving ' + s.dest, time, state: 'pending', aisEta: true });
-        }
-      } else {
-        // Insert as a waypoint before the arrival event
-        const arrIdx = s.timeline.findIndex(t => t.state === 'pending' &&
-          t.event && t.event.toLowerCase().includes('arriv'));
-        const waypointEvent = {
-          event: 'Transit via ' + titleCase(dest),
-          time,
-          state: 'done',
-          aisEta: true,
-        };
-        if (arrIdx > -1) {
-          s.timeline.splice(arrIdx, 0, waypointEvent);
-        } else {
-          s.timeline.push(waypointEvent);
-        }
-      }
-    });
-  });
 
   // Re-render if detail panel is open
   if (activeId !== null) refreshDetailPanel(activeId);
@@ -4889,24 +4730,8 @@ window.addEventListener('load', async () => {
   fetchVoyageEvents();
 
   // Fetch last-known positions from proxy (persisted 24/7 by Railway)
-  // This seeds dead reckoning even if the user wasn't online when the AIS
-  // update arrived, so position estimates survive multi-day gaps.
   fetchLastKnownPositions();
 
-  // Dead reckoning — update estimated positions every minute
-  setInterval(applyDeadReckoning, DR_UPDATE_INTERVAL);
-  setTimeout(applyDeadReckoning, 5000); // first pass after 5s
-
-
-  // ── SEARCH ────────────────────────────────────────────────────────────────
-  const searchInput = document.getElementById('shipmentSearch');
-  const searchClear = document.getElementById('searchClear');
-  searchInput.addEventListener('input', () => {
-    tableSearch = searchInput.value.trim();
-    currentPage = 1;
-    searchClear.style.display = tableSearch ? 'flex' : 'none';
-    renderTable();
-  });
   searchClear.addEventListener('click', () => {
     tableSearch = '';
     searchInput.value = '';
