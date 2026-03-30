@@ -553,22 +553,27 @@ wss.on('connection', browserSocket => {
         console.log('[ws] Rejected message — invalid secret');
         return;
       }
-      // Only accept browser APIKey if proxy doesn't already have a server-side key
-      const browserKey = sub.APIKey && sub.APIKey !== 'server' ? sub.APIKey : '';
-      if (browserKey && !process.env.AIS_API_KEY) {
-        // No server-side key — accept from browser (legacy mode)
-        if (browserKey !== apiKey) apiKey = browserKey;
-      }
-      // Always accept MMSI list updates from browser
-      if (sub.FiltersShipMMSI?.length) {
-        const newMmsis = JSON.stringify(sub.FiltersShipMMSI.slice().sort()) !==
-                         JSON.stringify(trackedMmsis.slice().sort());
-        if (newMmsis) {
-          trackedMmsis = sub.FiltersShipMMSI;
-          saveConfig();
+      // Server-managed mode: proxy has AIS_API_KEY — ignore browser's APIKey
+      // Browser-managed mode: no server key — accept APIKey from browser
+      if (!process.env.AIS_API_KEY && sub.APIKey && sub.APIKey !== 'server') {
+        if (sub.APIKey !== apiKey) {
+          apiKey = sub.APIKey;
+          console.log('[ws] Accepted APIKey from browser (no server-side key)');
         }
       }
-      // Start AIS if not already running
+      // Always accept MMSI updates from browser (new shipments added while browsing)
+      if (sub.FiltersShipMMSI?.length) {
+        const sorted    = sub.FiltersShipMMSI.slice().sort();
+        const current   = trackedMmsis.slice().sort();
+        if (JSON.stringify(sorted) !== JSON.stringify(current)) {
+          trackedMmsis = sub.FiltersShipMMSI;
+          saveConfig();
+          console.log('[ws] Updated MMSIs from browser: ' + trackedMmsis.join(', '));
+          // Reconnect AIS with new MMSI list
+          if (apiKey && aisSocket) { aisSocket.close(); aisSocket = null; }
+        }
+      }
+      // Ensure AIS is running
       if (apiKey && (!aisSocket || aisSocket.readyState !== WebSocket.OPEN)) {
         connectToAIS();
       }

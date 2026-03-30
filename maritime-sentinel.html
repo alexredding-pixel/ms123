@@ -2295,21 +2295,28 @@ function connectAIS(apiKey) {
   }
 
   ws.onopen = () => {
-    logDebug('WebSocket open - key length: ' + apiKey.length);
-    // Use a global bbox but keep volume low by filtering to just our 4 MMSIs.
-    // Per aisstream docs: BoundingBoxes is [[minLat, minLng], [maxLat, maxLng]]
-    // We send one global box and rely entirely on FiltersShipMMSI to limit data.
-    const sub = {
-      // If proxy has server-side AIS key, send empty APIKey — proxy uses its own
-      "APIKey": (apiKey === 'server') ? '' : apiKey,
-      "BoundingBoxes": [[[-90, -180], [90, 180]]],
-      "FiltersShipMMSI": TRACKED_MMSIS,
-      "_secret": getProxySecret()
-    };
-    const subStr = JSON.stringify(sub);
-    logDebug('Sending sub: ' + subStr.slice(0, 160));
-    ws.send(subStr);
-    logDebug('Sent. Waiting for first message...');
+    logDebug('WebSocket open - key: ' + (apiKey === 'server' ? 'server-managed' : apiKey.slice(0,8) + '...'));
+    if (apiKey === 'server') {
+      // Proxy manages AIS connection server-side — just send secret + MMSIs so
+      // proxy knows which vessels this browser cares about
+      ws.send(JSON.stringify({
+        "_secret": getProxySecret(),
+        "FiltersShipMMSI": TRACKED_MMSIS,
+      }));
+      logDebug('Sent browser MMSI list to server-managed proxy. Waiting for messages...');
+    } else {
+      // Browser-managed connection — send full subscription to aisstream
+      const sub = {
+        "APIKey": apiKey,
+        "BoundingBoxes": [[[-90, -180], [90, 180]]],
+        "FiltersShipMMSI": TRACKED_MMSIS,
+        "_secret": getProxySecret()
+      };
+      const subStr = JSON.stringify(sub);
+      logDebug('Sending sub: ' + subStr.slice(0, 160));
+      ws.send(subStr);
+      logDebug('Sent. Waiting for first message...');
+    }
   };
 
   ws.onmessage = async (event) => {
@@ -5258,21 +5265,28 @@ window.addEventListener('load', async () => {
 
 async function autoConnectIfProxyReady() {
   try {
+    const secret = getProxySecret();
+    console.log('[autoConnect] secret present:', !!secret, '| PROXY_BASE:', PROXY_BASE);
     const res = await fetch(PROXY_BASE + '/health', {
-      headers: { 'x-proxy-secret': getProxySecret() }
+      headers: { 'x-proxy-secret': secret }
     });
-    if (!res.ok) return;
+    console.log('[autoConnect] /health status:', res.status);
+    if (!res.ok) {
+      console.warn('[autoConnect] /health failed — secret may not be loaded yet');
+      return;
+    }
     const h = await res.json();
+    console.log('[autoConnect] health response:', JSON.stringify(h));
     if (h.aisConnected) {
-      // Proxy already has AIS connection via server-side AIS_API_KEY
-      // Connect browser WebSocket using a placeholder — proxy ignores APIKey
-      // if it already has a server-side key configured
-      wsApiKey = 'server'; // sentinel value — proxy uses its own key
+      console.log('[autoConnect] Proxy is connected — opening WebSocket');
+      wsApiKey = 'server';
       setConnectionStatus('connecting');
       connectAIS('server');
+    } else {
+      console.warn('[autoConnect] Proxy not connected to AIS — check AIS_API_KEY env var on Railway');
     }
   } catch(e) {
-    // Proxy unreachable — user connects manually via the badge
+    console.error('[autoConnect] Error:', e.message);
   }
 }
 </script>
