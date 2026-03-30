@@ -2130,6 +2130,11 @@ function esc(str) {
     .replace(/'/g, '&#x27;');
 }
 
+function getProxySecret() {
+  // Proxy secret is fetched from /config after login and stored in sessionStorage
+  return sessionStorage.getItem('ms_proxy_secret') || '';
+}
+
 // ── SUPABASE ─────────────────────────────────────────────────────────────────
 const SB_URL = 'https://nkxvacdhwimhemnmcpxe.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5reHZhY2Rod2ltaGVtbm1jcHhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2MjQxMTgsImV4cCI6MjA5MDIwMDExOH0.hc1kttUnPXg62yeo6xrRSXcily05zLA-Qo6AtDbYEhE';
