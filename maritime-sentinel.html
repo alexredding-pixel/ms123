@@ -3730,7 +3730,65 @@ async function fetchVoyageEvents() {
 
       evs.forEach(ev => {
         if (!ev.destination) return;
-        const dest     = ev.destination.trim();
+        const raw = ev.destination.trim();
+
+        // ── Server-side arrival event ─────────────────────────────────────────
+        // Proxy logs arrivals as "ATA:PORTNAME" with dest_changed=false.
+        // Replay them the same way the browser would via logArrivalEvent().
+        if (raw.startsWith('ATA:')) {
+          const dest     = raw.slice(4).trim();           // strip "ATA:" prefix
+          const destKey  = dest.toUpperCase();
+          const portName = titleCase(dest);
+          const ts       = new Date(ev.timestamp);
+          const ataStr   = ts.toLocaleDateString('en-GB', {day:'2-digit', month:'short'})
+            + ' ' + ts.toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
+          const isFinal  = (() => {
+            if (!s.dest) return false;
+            const ad = destKey.replace(/[^A-Z0-9]/g,'');
+            const ud = s.dest.toUpperCase().replace(/[^A-Z0-9]/g,'');
+            const as = ad.slice(0,5), uw = ud.split(/\s+/);
+            return uw.some(w => w.length >= 4 && (ad.includes(w.slice(0,5)) || w.slice(0,5).includes(as)));
+          })();
+
+          // Skip if already logged as an arrival in the timeline
+          const alreadyArrived = (s.timeline || []).some(t =>
+            t.isArrival && t.event.toUpperCase().replace(/[^A-Z0-9]/g,'').includes(destKey.slice(0,4))
+          );
+          if (alreadyArrived) return;
+
+          s.timeline = s.timeline || [];
+          const finalIdx   = s.timeline.length - 1;
+          const shortDest  = destKey.slice(0, 6);
+          const transitIdx = s.timeline.findIndex((t, i) =>
+            i < finalIdx && t.isTransit &&
+            t.event.toUpperCase().replace(/[^A-Z0-9]/g,'').includes(shortDest.replace(/[^A-Z0-9]/g,''))
+          );
+
+          const lastEta = (s.lastEtaByDest && s.lastEtaByDest[destKey])
+            || (s.firstEtas && s.firstEtas[destKey]) || null;
+
+          const arrivalProps = {
+            event: 'Arrived at ' + portName, time: ataStr + ' (ATA)',
+            state: 'done', isArrival: true, isTransit: false, aisEta: false,
+            ata: ataStr, eta: lastEta || null,
+          };
+
+          if (isFinal) {
+            Object.assign(s.timeline[finalIdx], arrivalProps);
+            s.eta = 'ATA: ' + ataStr;
+            s.arrivedAtFinal = true;
+          } else if (transitIdx >= 0) {
+            Object.assign(s.timeline[transitIdx], arrivalProps);
+          } else if (finalIdx >= 0) {
+            s.timeline.splice(finalIdx, 0, arrivalProps);
+          }
+          if (!isFinal) s.lastPortStop = ataStr + ' at ' + portName;
+          anyChange = true;
+          return;
+        }
+        // ─────────────────────────────────────────────────────────────────────
+
+        const dest     = raw;
         const destKey  = dest.toUpperCase();
         const portName = titleCase(dest);
         const ts       = new Date(ev.timestamp);
