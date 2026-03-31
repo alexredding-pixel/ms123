@@ -3800,7 +3800,9 @@ async function fetchVoyageEvents() {
     console.log('[events] Could not fetch voyage events:', e.message);
   }
 }
-  return str.toLowerCase().replace(/\w/g, c => c.toUpperCase());
+
+function titleCase(str) {
+  return str.toLowerCase().replace(/\w/g, c => c.toUpperCase());
 }
 
 // -- REMOVE SHIPMENT ---------------------------------------------------------
