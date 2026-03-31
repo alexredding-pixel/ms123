@@ -2372,6 +2372,7 @@ let ws = null;
 let wsReconnectTimer = null;
 let wsApiKey = '';
 let isConnected = false;
+let wsTransientFailures = 0; // counts consecutive drops before first message
 
 // -- AIS CONNECT ---------------------------------------------------------------
 let messageCount = 0;
@@ -2446,7 +2447,23 @@ function connectAIS(apiKey) {
 
     try {
       const msg = JSON.parse(raw);
-      if (messageCount === 1) setConnectionStatus('connected');
+
+      // Detect genuine auth error from aisstream — arrives as a JSON message
+      // before the socket closes, not as a raw TCP drop
+      if (msg.error && typeof msg.error === 'string' &&
+          msg.error.toLowerCase().includes('api key')) {
+        logDebug('Auth error from aisstream: ' + msg.error);
+        setConnectionStatus('error', 'Auth failed — check your API key');
+        wsApiKey = ''; // stop retrying
+        ws.close();
+        return;
+      }
+
+      // First real data message — reset transient failure counter
+      if (messageCount === 1) {
+        wsTransientFailures = 0;
+        setConnectionStatus('connected');
+      }
       handleAISMessage(msg);
     } catch (e) {
       logDebug('JSON parse error: ' + e.message + ' | raw: ' + raw.slice(0, 80));
@@ -2462,28 +2479,27 @@ function connectAIS(apiKey) {
     logDebug('WebSocket closed - code: ' + e.code + ' reason: "' + (e.reason || '') + '"');
     logDebug('Messages received before close: ' + messageCount);
 
-    // Bad API key - stop retrying
-    if (e.code === 1006 && messageCount === 0) {
-      setConnectionStatus('error', 'Auth failed - check your API key');
-      logDebug('Looks like an invalid API key.');
-      wsApiKey = '';
-      return;
-    }
-
+    // Genuine auth failure: aisstream sends {"error":"Api Key Is Not Valid"} as the
+    // FIRST message (messageCount becomes 1) before closing. We detect this in onmessage
+    // and set wsApiKey = '' there. A raw 1006 with 0 messages is a network/platform drop
+    // and should ALWAYS retry — not treated as a key error.
     if (!wsApiKey || wsApiKey === '') return;
 
     if (messageCount > 0) {
-      // Was a live session - reconnect quietly after 30s, keep showing "Live"
-      // so the UI doesn't flash. Only update status if still disconnected at reconnect time.
+      // Was a live session — reconnect quietly after 30s
       logDebug('Session ended normally. Reconnecting in 30s...');
       wsReconnectTimer = setTimeout(() => {
         setConnectionStatus('connecting');
         connectAIS(wsApiKey);
       }, 30000);
     } else {
-      // Never got data - wait 60s before retrying silently
-      logDebug('No data received. Retrying in 60s...');
-      wsReconnectTimer = setTimeout(() => connectAIS(wsApiKey), 60000);
+      // Never got data — transient drop (network blip, platform restart, etc.)
+      // Retry with progressive backoff
+      wsTransientFailures = (wsTransientFailures || 0) + 1;
+      const delay = wsTransientFailures > 3 ? 120000 : wsTransientFailures > 1 ? 60000 : 30000;
+      logDebug('No data received (transient drop #' + wsTransientFailures + '). Retrying in ' + (delay/1000) + 's...');
+      setConnectionStatus('connecting');
+      wsReconnectTimer = setTimeout(() => connectAIS(wsApiKey), delay);
     }
   };
 }
