@@ -2332,6 +2332,8 @@ async function syncShipmentsFromSupabase() {
         s.lastPortStop = s.eta.replace('ATA: ', '');
         s.eta = 'Awaiting live data...';
       }
+      // Clean up duplicate transit entries and redundant booked final step
+      sanitizeTimeline(s);
     });
     renderTable();
     renderAlerts();
@@ -2802,6 +2804,9 @@ function logArrivalEvent(s, aisTimestamp) {
     // For intermediate arrivals, store as lastPortStop but keep final ETA intact
     s.lastPortStop = ataStr + ' at ' + portName;
   }
+
+  // Clean up duplicates and remove redundant booked final step
+  sanitizeTimeline(s);
 
   saveShipments();
   const delayNote = delayDays !== null
@@ -3803,6 +3808,7 @@ async function fetchVoyageEvents() {
             s.timeline.splice(finalIdx, 0, arrivalProps);
           }
           if (!isFinal) s.lastPortStop = ataStr + ' at ' + portName;
+          sanitizeTimeline(s);
           anyChange = true;
           return;
         }
@@ -3883,6 +3889,60 @@ async function fetchVoyageEvents() {
     console.log('[events] Replayed ' + events.length + ' voyage events from server');
   } catch(e) {
     console.log('[events] Could not fetch voyage events:', e.message);
+  }
+}
+
+// -- TIMELINE SANITISATION -----------------------------------------------------
+// Cleans up a shipment's timeline after any update:
+//   1. Deduplicates transit/arrival entries for the same port (keeps the best one:
+//      isArrival > isTransit, then most recent timestamp)
+//   2. When arrivedAtFinal, removes the now-redundant booked "Arrive [dest]" final
+//      step — the "Arrived at [port]" entry with ATA already serves this purpose,
+//      and the original booked date is preserved in s.arriveDate for slip calcs.
+function sanitizeTimeline(s) {
+  if (!s.timeline || s.timeline.length === 0) return;
+
+  // Step 1: deduplicate entries pointing to the same port
+  // Key = first 5 alphanum chars of the port name in the event text
+  const seen = {};
+  const deduped = [];
+  for (const t of s.timeline) {
+    // Extract port key from event text ("Transit via ROTTERDAM" → "ROTTE", etc.)
+    const portMatch = t.event && t.event.match(/(?:via|at)\s+(.+)/i);
+    const portKey   = portMatch
+      ? portMatch[1].toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,5)
+      : null;
+
+    if (!portKey || t.state === 'pending' || (!t.isTransit && !t.isArrival)) {
+      // Non-port steps (booking created, loading) — always keep
+      deduped.push(t);
+      continue;
+    }
+
+    if (!seen[portKey]) {
+      seen[portKey] = deduped.length; // remember index
+      deduped.push(t);
+    } else {
+      const existing = deduped[seen[portKey]];
+      // Keep the better entry: arrival beats transit; done beats active
+      const thisScore  = (t.isArrival ? 2 : 0) + (t.state === 'done' ? 1 : 0);
+      const existScore = (existing.isArrival ? 2 : 0) + (existing.state === 'done' ? 1 : 0);
+      if (thisScore > existScore) deduped[seen[portKey]] = t;
+    }
+  }
+  s.timeline = deduped;
+
+  // Step 2: if arrived at final port, remove the now-redundant booked final step
+  // The booked date is already in s.arriveDate — no data is lost
+  if (s.arrivedAtFinal && s.timeline.length > 0) {
+    const last = s.timeline[s.timeline.length - 1];
+    // The last step should be the ATA arrival — if it's a plain pending "Arrive"
+    // step (not isArrival), it's the original booked placeholder and should go
+    if (!last.isArrival && last.state === 'done') {
+      // Already converted — fine, leave it
+    } else if (!last.isArrival && (last.state === 'pending' || last.state === 'active')) {
+      s.timeline.pop();
+    }
   }
 }
 
