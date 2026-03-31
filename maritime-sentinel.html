@@ -2537,9 +2537,11 @@ function handleAISMessage(msg) {
     const sd = msg.Message?.ShipStaticData || {};
     const newDest = sd.Destination ? sd.Destination.trim() : s.destination;
     const prevDest = s.destination;
+    const destChanged = newDest && prevDest &&
+      newDest.toUpperCase() !== (prevDest || '').toUpperCase();
 
     // Freeze slip from previous waypoint when destination changes
-    if (newDest && prevDest && newDest.toUpperCase() !== (prevDest || '').toUpperCase()) {
+    if (destChanged) {
       freezeWaypointSlip(s, (prevDest || '').toUpperCase());
     }
     if (sd.Destination) s.destination = sd.Destination.trim();
@@ -2550,9 +2552,9 @@ function handleAISMessage(msg) {
         const etaStr = 'ETA: ' + String(e.Month).padStart(2,'0') + '/' + String(e.Day).padStart(2,'0') + ' ' + String(e.Hour||0).padStart(2,'0') + ':' + String(e.Minute||0).padStart(2,'0') + ' UTC';
         s.eta = etaStr;
 
-        const dest = (sd.Destination || '').trim().toUpperCase();
+        const dest = (sd.Destination || s.destination || '').trim().toUpperCase();
 
-        // Track latest ETA seen for this destination (for freezing when vessel moves on)
+        // Track latest ETA seen for this destination
         if (dest) {
           if (!s.lastEtaByDest) s.lastEtaByDest = {};
           s.lastEtaByDest[dest] = etaStr;
@@ -2561,14 +2563,61 @@ function handleAISMessage(msg) {
         // Calculate cumulative slip
         calculateSlip(s, dest, etaStr);
 
-        // Update the last timeline event if still TBC
+        // ── DYNAMIC TIMELINE ──────────────────────────────────────────────
+        // The timeline always keeps the "Arrive <finalDest>" step LAST.
+        // Intermediate ports are inserted before it as "Transit via <port>" steps.
+        // When AIS reports a new destination:
+        //   1. If it's the final port  → update the final step's ETA in place.
+        //   2. If it's a new intermediate → insert a Transit step before the final step.
+        //   3. If it matches an existing Transit step → update its ETA.
+
         if (s.timeline && s.timeline.length > 0) {
-          const last = s.timeline[s.timeline.length - 1];
-          if (!last.time || last.time === 'TBC' || last.state === 'pending') {
-            last.time = etaStr;
-            last.aisEta = true;
+          const isFinal = destMatchesFinal(s);
+          // Find the final step (always last pending "Arrive" item)
+          const finalIdx = s.timeline.length - 1;
+          const finalStep = s.timeline[finalIdx];
+
+          if (isFinal) {
+            // Vessel is heading to the user's discharge port — update final step ETA
+            if (!finalStep.isArrival || finalStep.state !== 'done') {
+              finalStep.time   = etaStr;
+              finalStep.aisEta = true;
+              finalStep.state  = finalStep.state === 'done' ? 'done' : 'active';
+            }
+          } else if (dest) {
+            // Intermediate port — find or create a "Transit via" step before the final step
+            const shortDest = dest.slice(0, 6);
+            const existingIdx = s.timeline.findIndex((t, i) =>
+              i < finalIdx &&
+              t.isTransit &&
+              t.event.toUpperCase().replace(/[^A-Z0-9]/g,'').includes(shortDest.replace(/[^A-Z0-9]/g,''))
+            );
+
+            if (existingIdx >= 0) {
+              // Update ETA on existing transit step
+              if (s.timeline[existingIdx].state !== 'done') {
+                s.timeline[existingIdx].time   = etaStr;
+                s.timeline[existingIdx].aisEta = true;
+                s.timeline[existingIdx].state  = 'active';
+              }
+            } else {
+              // Insert new transit step before the final step
+              const portName = titleCase(s.destination || dest);
+              const transitStep = {
+                event:     'Transit via ' + portName,
+                time:      etaStr,
+                state:     'active',
+                isTransit: true,
+                aisEta:    true,
+              };
+              s.timeline.splice(finalIdx, 0, transitStep);
+            }
+
+            // Final step reverts to pending (it's after this intermediate)
+            if (finalStep.state === 'active') finalStep.state = 'pending';
           }
         }
+        // ─────────────────────────────────────────────────────────────────
       }
     }
 
@@ -2658,6 +2707,7 @@ function freezeWaypointSlip(s, oldDest) {
 function logArrivalEvent(s, aisTimestamp) {
   const dest = s.destination || 'port';
   const portName = titleCase(dest);
+  const destKey = dest.toUpperCase();
   // Use AIS message timestamp (actual arrival) rather than browser processing time
   const now = aisTimestamp ? new Date(aisTimestamp) : new Date();
   const ataStr = now.toLocaleDateString('en-GB', {day:'2-digit', month:'short'})
@@ -2671,7 +2721,6 @@ function logArrivalEvent(s, aisTimestamp) {
   if (alreadyLogged) return;
 
   // Capture the last ETA we had for this destination before replacing it
-  const destKey = dest.toUpperCase();
   const lastEta = (s.lastEtaByDest && s.lastEtaByDest[destKey])
     || (s.firstEtas && s.firstEtas[destKey])
     || (s.eta && !s.eta.startsWith('ATA:') ? s.eta.replace('ETA: ', '') : null);
@@ -2686,37 +2735,57 @@ function logArrivalEvent(s, aisTimestamp) {
     }
   }
 
-  // Build the arrival timeline event with full ETA vs ATA data
-  const arrivalEvent = {
-    event:      'Arrived at ' + portName,
-    time:       ataStr + ' (ATA)',
-    state:      'done',
-    isArrival:  true,
-    ata:        ataStr,
-    eta:        lastEta || null,   // predicted ETA at this port
-    delayDays:  delayDays,         // positive = late, negative = early, 0 = on time
+  const isFinal = destMatchesFinal(s);
+  const shortDest = destKey.slice(0, 6);
+
+  // ── TIMELINE UPDATE ───────────────────────────────────────────────────────
+  // Strategy:
+  //   • If arriving at a Transit step → convert it to "Arrived at <port>" in place
+  //   • If arriving at the final step → mark it done with ATA
+  //   • Otherwise → insert a fresh arrival event before the final step
+
+  s.timeline = s.timeline || [];
+  const finalIdx = s.timeline.length - 1;
+
+  // Find matching transit step for this destination
+  const transitIdx = s.timeline.findIndex((t, i) =>
+    i < finalIdx &&
+    t.isTransit &&
+    t.event.toUpperCase().replace(/[^A-Z0-9]/g,'').includes(shortDest.replace(/[^A-Z0-9]/g,''))
+  );
+
+  const arrivalProps = {
+    event:     'Arrived at ' + portName,
+    time:      ataStr + ' (ATA)',
+    state:     'done',
+    isArrival: true,
+    isTransit: false,
+    aisEta:    false,
+    ata:       ataStr,
+    eta:       lastEta || null,
+    delayDays: delayDays,
   };
 
-  // Update any existing pending "Arrive" event, or insert fresh
-  let matched = false;
-  (s.timeline || []).forEach(t => {
-    if (t.state === 'pending' && t.event && t.event.toLowerCase().includes('arriv')) {
-      Object.assign(t, arrivalEvent);
-      matched = true;
-    }
-  });
-  if (!matched) {
-    s.timeline = s.timeline || [];
-    s.timeline.push(arrivalEvent);
+  if (isFinal) {
+    // Arriving at the final discharge port — update the last step in place
+    Object.assign(s.timeline[finalIdx], arrivalProps);
+  } else if (transitIdx >= 0) {
+    // Upgrade existing Transit step to Arrived
+    Object.assign(s.timeline[transitIdx], arrivalProps);
+  } else {
+    // No transit step found — insert a new arrival before the final step
+    s.timeline.splice(finalIdx, 0, arrivalProps);
   }
+  // ─────────────────────────────────────────────────────────────────────────
 
   // Only replace s.eta with ATA if this is the user's final discharge port
-  // For intermediate ports, keep the booked ETA intact for the final leg
-  if (destMatchesFinal(s)) {
+  if (isFinal) {
     s.eta = 'ATA: ' + ataStr;
     s.arrivedAtFinal = true;
+  } else {
+    // For intermediate arrivals, store as lastPortStop but keep final ETA intact
+    s.lastPortStop = ataStr + ' at ' + portName;
   }
-  // Always log the port stop in lastEtaByDest for slip tracking
 
   saveShipments();
   const delayNote = delayDays !== null
@@ -2743,10 +2812,7 @@ function updateRow(idx) {
   // Update AIS timestamp cell
   const tsCell = document.getElementById('ais-ts-' + idx);
   if (tsCell && s.lastUpdate) {
-    const isPrev = s.lastUpdate.endsWith('(prev)');
-    tsCell.textContent = isPrev ? s.lastUpdate.replace(' (prev)', '') : s.lastUpdate;
-    tsCell.style.opacity = isPrev ? '0.5' : '1';
-    tsCell.title = isPrev ? 'Last known before restart' : 'Live AIS update';
+    tsCell.innerHTML = aisAgeCellHtml(s);
   }
 
   // Flash the row briefly to signal an update
@@ -2797,7 +2863,15 @@ function refreshDetailPanel(idx) {
       liveSection.innerHTML += detailRow(label, s.eta.replace('ETA: ', ''));
     }
 
-    if (s.lastUpdate) liveSection.innerHTML += detailRow('Last Update', s.lastUpdate);
+    if (s.lastUpdate) {
+      const age = aisAgeLabel(s);
+      const ageStr = typeof age === 'string' ? age : age.text;
+      const timeStr = typeof age === 'string' ? age : age.timeStr;
+      const updateVal = (ageStr !== timeStr)
+        ? ageStr + ' <span style="font-weight:400;color:var(--on-surface-variant);font-size:0.6875rem;">(' + timeStr + ')</span>'
+        : ageStr;
+      liveSection.innerHTML += detailRow('Last AIS Update', updateVal);
+    }
     // Dead reckoning estimate
     if (s.lat && s.lng) {
       liveSection.innerHTML += detailRow('Position', s.lat.toFixed(4) + '°, ' + s.lng.toFixed(4) + '°');
@@ -2864,6 +2938,37 @@ function slipBadgeHtml(s) {
     return '<span class="slip-badge late">+' + s.slipDays + 'd slip</span>';
   }
   return '<span class="slip-badge early">' + s.slipDays + 'd early</span>';
+}
+
+// Returns a human-readable age string for the AIS update timestamp.
+// If < 24h: shows the HH:MM time. If >= 24h: shows "Xd ago" in amber/red.
+function aisAgeLabel(s) {
+  if (!s.lastUpdate) return '--';
+  const ts = s.lastUpdateTs || 0;
+  const ageMs = ts ? Date.now() - ts : 0;
+  const isPrev = String(s.lastUpdate).endsWith('(prev)');
+  const timeStr = String(s.lastUpdate).replace(' (prev)', '');
+
+  if (ts && ageMs > 86400000) {
+    const days = Math.floor(ageMs / 86400000);
+    const hours = Math.floor((ageMs % 86400000) / 3600000);
+    const label = days >= 2 ? days + 'd ago' : (hours > 0 ? '1d ' + hours + 'h ago' : '1d ago');
+    return { text: label, stale: true, timeStr };
+  }
+  return { text: timeStr, stale: isPrev, timeStr };
+}
+
+function aisAgeCellHtml(s) {
+  const age = aisAgeLabel(s);
+  if (typeof age === 'string') return age; // no ts
+  const color = age.stale
+    ? (String(age.text).includes('d ago') && parseInt(age.text) >= 2 ? 'var(--error)' : 'var(--on-surface-variant)')
+    : 'var(--on-surface-variant)';
+  const opacity = age.stale ? '0.7' : '1';
+  const title = age.stale && age.text !== age.timeStr
+    ? 'Last update: ' + age.timeStr
+    : (age.stale ? 'Last known before restart' : 'Live AIS update');
+  return '<span style="color:' + color + ';opacity:' + opacity + ';" title="' + title + '">' + age.text + '</span>';
 }
 
 function detailRow(label, value) {
@@ -2968,20 +3073,42 @@ function openDetail(idx) {
       liveSection.innerHTML += detailRow(label, s.eta.replace('ETA: ', ''));
     }
 
-    if (s.lastUpdate) liveSection.innerHTML += detailRow('Last AIS Update', s.lastUpdate);
+    if (s.lastUpdate) {
+      const age = aisAgeLabel(s);
+      const ageStr = typeof age === 'string' ? age : age.text;
+      const timeStr = typeof age === 'string' ? age : age.timeStr;
+      const updateVal = (ageStr !== timeStr)
+        ? ageStr + ' <span style="font-weight:400;color:var(--on-surface-variant);font-size:0.6875rem;">(' + timeStr + ')</span>'
+        : ageStr;
+      liveSection.innerHTML += detailRow('Last AIS Update', updateVal);
+    }
   }
 
   const tl = document.getElementById('dpTimeline');
-  tl.innerHTML = s.timeline.map(t => `
-    <div class="timeline-item">
-      <div class="timeline-dot ${t.state}"></div>
-      <div class="timeline-event">${t.event}</div>
-      <div class="timeline-time">
-        ${t.time || 'TBC'}
-        ${t.aisEta ? '<span style="margin-left:6px;font-size:0.5625rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;background:var(--primary-fixed);color:var(--on-primary-fixed);padding:2px 6px;border-radius:4px;">AIS</span>' : ''}
-      </div>
-    </div>
-  `).join('');
+  tl.innerHTML = s.timeline.map(t => {
+    let timeHtml = t.time || 'TBC';
+    if (t.aisEta && !t.isArrival) {
+      timeHtml += ' <span style="margin-left:6px;font-size:0.5625rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;background:var(--primary-fixed);color:var(--on-primary-fixed);padding:2px 6px;border-radius:4px;">AIS</span>';
+    }
+    let comparisonHtml = '';
+    if (t.isArrival && t.eta) {
+      const dd = t.delayDays;
+      let delayBadge = '';
+      if (dd !== null && dd !== undefined) {
+        if (dd === 0) delayBadge = ' <span style="font-size:0.5625rem;font-weight:800;background:rgba(12,82,22,0.12);color:var(--on-tertiary-fixed-variant);padding:2px 6px;border-radius:4px;">ON TIME</span>';
+        else if (dd > 0) delayBadge = ' <span style="font-size:0.5625rem;font-weight:800;background:var(--error-container);color:var(--on-error-container);padding:2px 6px;border-radius:4px;">+' + dd + 'd LATE</span>';
+        else delayBadge = ' <span style="font-size:0.5625rem;font-weight:800;background:rgba(12,82,22,0.12);color:var(--on-tertiary-fixed-variant);padding:2px 6px;border-radius:4px;">' + Math.abs(dd) + 'd EARLY</span>';
+      }
+      comparisonHtml = '<div style="margin-top:4px;font-size:0.6875rem;color:var(--on-surface-variant);">ETA was: ' + t.eta + delayBadge + '</div>';
+    }
+    return '<div class="timeline-item">'
+      + '<div class="timeline-dot ' + t.state + '"></div>'
+      + '<div style="flex:1;min-width:0;">'
+      + '<div class="timeline-event">' + t.event + '</div>'
+      + '<div class="timeline-time">' + timeHtml + '</div>'
+      + comparisonHtml
+      + '</div></div>';
+  }).join('');
 
   document.getElementById('detailPanel').classList.add('open');
   renderDocSection(s);
@@ -3156,9 +3283,9 @@ function destMatchesFinal(s) {
 }
 
 function getDisplayEta(s) {
-  // ATA at the FINAL discharge port — show it
+  // ATA at the FINAL discharge port — show it (strip the ATA: prefix for display)
   if (s.eta && s.eta.startsWith('ATA:') && s.arrivedAtFinal) {
-    return s.eta;
+    return s.eta.replace('ATA: ', '').replace('ATA:', '').trim();
   }
 
   const hasAisEta = s.eta && s.eta !== 'Awaiting live data...' && !s.eta.startsWith('ATA:');
@@ -3267,7 +3394,7 @@ function renderTable() {
       + '<span class="chip ' + chipType + '"><span class="chip-dot"></span>' + chipLabel(s.status) + '</span>'
       + '</td>'
       + '<td style="padding:20px 16px;white-space:nowrap;font-size:0.8125rem;">' + etaDisplay + '</td>'
-      + '<td id="ais-ts-' + idx + '" style="font-family:DM Mono,monospace;font-size:0.75rem;font-weight:600;color:var(--on-surface-variant);white-space:nowrap;padding:20px 16px;">' + (s.lastUpdate || '--') + '</td>'
+      + '<td id="ais-ts-' + idx + '" style="font-family:DM Mono,monospace;font-size:0.75rem;font-weight:600;white-space:nowrap;padding:20px 16px;">' + aisAgeCellHtml(s) + '</td>'
       + '<td style="padding:20px 28px;text-align:right;">'
       + '<button class="row-chevron"><span class="material-symbols-outlined">chevron_right</span></button>'
       + '</td></tr>';
@@ -3572,7 +3699,107 @@ async function fetchLastKnownPositions() {
   if (activeId !== null) refreshDetailPanel(activeId);
 }
 
-function titleCase(str) {
+// -- VOYAGE EVENT REPLAY -------------------------------------------------------
+// Fetches the server-side voyage_events log and replays any port changes that
+// happened while the browser was offline, so the timeline is always complete.
+async function fetchVoyageEvents() {
+  try {
+    const res = await fetch(PROXY_BASE + '/events', { headers: { 'x-proxy-secret': getProxySecret() } });
+    if (!res.ok) return;
+    const events = await res.json(); // [{mmsi, destination, eta, lat, lng, dest_changed, timestamp}]
+    if (!Array.isArray(events) || events.length === 0) return;
+
+    // Group events by MMSI, already sorted asc by timestamp from proxy
+    const byMmsi = {};
+    events.forEach(ev => {
+      if (!ev.mmsi) return;
+      (byMmsi[ev.mmsi] = byMmsi[ev.mmsi] || []).push(ev);
+    });
+
+    let anyChange = false;
+    shipments.forEach(s => {
+      if (!s.mmsi || !byMmsi[s.mmsi]) return;
+      const evs = byMmsi[s.mmsi];
+
+      evs.forEach(ev => {
+        if (!ev.destination) return;
+        const dest     = ev.destination.trim();
+        const destKey  = dest.toUpperCase();
+        const portName = titleCase(dest);
+        const ts       = new Date(ev.timestamp);
+        const timeStr  = ts.toLocaleDateString('en-GB', {day:'2-digit', month:'short'})
+          + ' ' + ts.toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
+        const etaStr   = ev.eta || null;
+
+        // Track first/last ETA seen for slip calculation
+        if (etaStr) {
+          if (!s.firstEtas) s.firstEtas = {};
+          if (!s.lastEtaByDest) s.lastEtaByDest = {};
+          if (!s.firstEtas[destKey]) s.firstEtas[destKey] = etaStr;
+          s.lastEtaByDest[destKey] = etaStr;
+        }
+
+        // Update s.destination to the latest known destination
+        s.destination = dest;
+
+        // ── Rebuild timeline from server events ──────────────────────────
+        s.timeline = s.timeline || [];
+        const finalIdx  = s.timeline.length - 1;
+        const finalStep = finalIdx >= 0 ? s.timeline[finalIdx] : null;
+        const isFinal   = destMatchesFinal(s);
+        const shortDest = destKey.slice(0, 6);
+
+        // Check if this destination already has any entry in the timeline
+        const existingIdx = s.timeline.findIndex((t, i) =>
+          i < (isFinal ? s.timeline.length : finalIdx) &&
+          (t.isTransit || t.isArrival) &&
+          t.event.toUpperCase().replace(/[^A-Z0-9]/g,'').includes(shortDest.replace(/[^A-Z0-9]/g,''))
+        );
+
+        if (isFinal) {
+          // This is the user's discharge port
+          if (finalStep && !finalStep.isArrival) {
+            // Update final step ETA if we have one
+            if (etaStr) { finalStep.time = etaStr; finalStep.aisEta = true; }
+          }
+        } else if (existingIdx < 0 && finalStep) {
+          // New intermediate port not yet in timeline — insert Transit step before final
+          const transitStep = {
+            event:     'Transit via ' + portName,
+            time:      etaStr || timeStr,
+            state:     'active',
+            isTransit: true,
+            aisEta:    !!etaStr,
+          };
+          s.timeline.splice(finalIdx, 0, transitStep);
+          anyChange = true;
+        }
+        // (if existingIdx >= 0, it was already handled live — don't overwrite ATA/done steps)
+      });
+
+      // Restore AIS destination label for most recent event
+      if (evs.length > 0) {
+        const last = evs[evs.length - 1];
+        if (last.eta && !s.arrivedAtFinal) {
+          const etaStr = last.eta;
+          // Only restore s.eta if it's not already an ATA
+          if (!s.eta || s.eta === 'Awaiting live data...' || s.eta.startsWith('ETA:')) {
+            s.eta = etaStr;
+          }
+        }
+      }
+    });
+
+    if (anyChange) {
+      saveShipments();
+      renderTable();
+      if (activeId !== null) refreshDetailPanel(activeId);
+    }
+    console.log('[events] Replayed ' + events.length + ' voyage events from server');
+  } catch(e) {
+    console.log('[events] Could not fetch voyage events:', e.message);
+  }
+}
   return str.toLowerCase().replace(/\w/g, c => c.toUpperCase());
 }
 
@@ -4718,8 +4945,16 @@ async function onAuthSuccess() {
   }
   // Now that proxy secret is loaded, fetch positions and auto-connect AIS
   fetchLastKnownPositions();
+  fetchVoyageEvents();
   autoConnectIfProxyReady();
 }
+
+// Periodically re-fetch voyage events so new intermediate port stops appear
+// in the timeline even when the browser stays open without an AIS WebSocket message.
+setInterval(() => {
+  if (!currentSession) return; // only when logged in
+  fetchVoyageEvents();
+}, 10 * 60 * 1000); // every 10 minutes
 
 // Auto-refresh session every 45 minutes
 setInterval(async () => {
