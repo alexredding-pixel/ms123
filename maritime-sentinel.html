@@ -3638,11 +3638,9 @@ function submitAddShipment() {
     if (loadDate) s.loadDate   = loadDate;
     VESSEL_REGISTRY = buildRegistry();
     TRACKED_MMSIS   = Object.keys(VESSEL_REGISTRY);
-    if (wsApiKey) {
-      notifyProxy(wsApiKey, TRACKED_MMSIS);
-      if (ws) { ws.close(); ws = null; }
-      setTimeout(() => connectAIS(wsApiKey), 300);
-    }
+    // Just notify the proxy of the updated MMSI list — no WS reconnect needed.
+    // The proxy updates its AIS subscription server-side; the browser connection stays live.
+    notifyProxy(TRACKED_MMSIS);
     saveShipments();
     renderTable();
     closeAddModal();
@@ -3685,12 +3683,8 @@ function submitAddShipment() {
   }
   VESSEL_REGISTRY = buildRegistry();
   TRACKED_MMSIS   = Object.keys(VESSEL_REGISTRY);
-  if (wsApiKey) {
-    notifyProxy(wsApiKey, TRACKED_MMSIS);
-    clearTimeout(wsReconnectTimer);
-    if (ws) { ws.close(); ws = null; }
-    setTimeout(() => connectAIS(wsApiKey), 300);
-  }
+  // Notify proxy of the new MMSI — no WS reconnect needed.
+  notifyProxy(TRACKED_MMSIS);
   renderTable();
   closeAddModal();
   setTimeout(() => openDetail(shipments.length - 1), 100);
@@ -3703,12 +3697,16 @@ function submitAddShipment() {
 // -- PROXY SYNC --------------------------------------------------------------
 // Tell the proxy's persistent AIS connection about new/removed MMSIs so it
 // starts tracking them server-side immediately, independent of the browser WS.
-async function notifyProxy(apiKey, mmsis) {
+async function notifyProxy(mmsis) {
+  // Tells the proxy to update its AIS MMSI subscription.
+  // We never pass the AIS key here — the proxy already has it in AIS_API_KEY env var.
+  // We also never close the browser WebSocket just to update MMSIs — the proxy
+  // handles the AIS subscription update server-side without needing a reconnect.
   try {
     await fetch(PROXY_BASE + '/subscribe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-proxy-secret': getProxySecret() },
-      body: JSON.stringify({ apiKey, mmsis }),
+      body: JSON.stringify({ mmsis }),
     });
     console.log('[proxy] Updated server tracking:', mmsis);
   } catch(e) {
@@ -4055,13 +4053,8 @@ function confirmRemove() {
   VESSEL_REGISTRY = buildRegistry();
   TRACKED_MMSIS   = Object.keys(VESSEL_REGISTRY);
 
-  // Notify proxy and reconnect with updated MMSI list
-  if (wsApiKey) {
-    notifyProxy(wsApiKey, TRACKED_MMSIS);
-    clearTimeout(wsReconnectTimer);
-    if (ws) { ws.close(); ws = null; }
-    setTimeout(() => connectAIS(wsApiKey), 500);
-  }
+  // Notify proxy of removed MMSI — no WS reconnect needed.
+  notifyProxy(TRACKED_MMSIS);
 
   closeDetail();
   renderTable();
