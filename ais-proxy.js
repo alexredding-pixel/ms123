@@ -12,10 +12,21 @@
  */
 
 const { WebSocket, WebSocketServer } = require('ws');
-const http  = require('http');
-const https = require('https');
-const fs    = require('fs');
-const path  = require('path');
+const http   = require('http');
+const https  = require('https');
+const fs     = require('fs');
+const path   = require('path');
+const crypto = require('crypto');
+
+// Constant-time string comparison — prevents timing attacks on the proxy secret
+function safeEqual(a, b) {
+  try {
+    const ba = Buffer.from(String(a));
+    const bb = Buffer.from(String(b));
+    if (ba.length !== bb.length) return false;
+    return crypto.timingSafeEqual(ba, bb);
+  } catch { return false; }
+}
 
 // ── ANTHROPIC API (key stored as env var — never exposed to browser) ────────────
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || '';
@@ -325,7 +336,7 @@ const httpServer = http.createServer((req, res) => {
   // Exempt: page load routes (no secret available yet), health, favicon
   const PROXY_SECRET = process.env.PROXY_SECRET || '';
   const exemptPaths  = ['/', '/index.html', '/health', '/favicon.ico'];
-  if (PROXY_SECRET && !exemptPaths.includes(req.url) && req.headers['x-proxy-secret'] !== PROXY_SECRET) {
+  if (PROXY_SECRET && !exemptPaths.includes(req.url) && !safeEqual(req.headers['x-proxy-secret'], PROXY_SECRET)) {
     res.writeHead(401, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Unauthorized' }));
     return;
@@ -401,7 +412,16 @@ const httpServer = http.createServer((req, res) => {
       try {
         const { apiKey: k, mmsis } = JSON.parse(body);
         if (k) apiKey = k;
-        if (Array.isArray(mmsis) && mmsis.length) trackedMmsis = mmsis;
+        if (Array.isArray(mmsis) && mmsis.length) {
+          // Validate every MMSI is a 7–9 digit number — same rule as bootstrap
+          const validated = mmsis
+            .map(m => String(m).trim())
+            .filter(m => /^\d{7,9}$/.test(m));
+          if (validated.length !== mmsis.length) {
+            console.warn('[subscribe] Rejected ' + (mmsis.length - validated.length) + ' invalid MMSI(s)');
+          }
+          if (validated.length > 0) trackedMmsis = validated;
+        }
         saveConfig();
         if (aisSocket) { aisSocket.close(); aisSocket = null; }
         clearTimeout(reconnectTimer);
@@ -533,9 +553,24 @@ Return this exact structure (use null for any field not found):
 // ── WEBSOCKET SERVER ──────────────────────────────────────────────────────────
 const wss = new WebSocketServer({ server: httpServer });
 
-wss.on('connection', browserSocket => {
+// Per-IP connection tracking — prevents a single client flooding the proxy
+const wsConnsByIp = new Map();
+const WS_MAX_PER_IP = 3;
+
+wss.on('connection', (browserSocket, req) => {
+  const ip = req.headers['x-forwarded-for']?.split(',')[0].trim()
+           || req.socket.remoteAddress || 'unknown';
+
+  // Enforce per-IP limit
+  const ipCount = (wsConnsByIp.get(ip) || 0) + 1;
+  if (ipCount > WS_MAX_PER_IP) {
+    console.warn('[ws] Rejected connection from ' + ip + ' — limit of ' + WS_MAX_PER_IP + ' reached');
+    browserSocket.close(1008, 'Too many connections from this IP');
+    return;
+  }
+  wsConnsByIp.set(ip, ipCount);
   connectedCount++;
-  console.log(`[ws] Browser connected (${connectedCount} total)`);
+  console.log(`[ws] Browser connected from ${ip} (${connectedCount} total, ${ipCount} from this IP)`);
   if (!aisSocket || aisSocket.readyState !== WebSocket.OPEN) connectToAIS();
 
   browserSocket.on('message', data => {
@@ -549,7 +584,7 @@ wss.on('connection', browserSocket => {
       const sub = JSON.parse(data.toString());
       // Validate proxy secret in WebSocket messages
       const PROXY_SECRET = process.env.PROXY_SECRET || '';
-      if (PROXY_SECRET && sub._secret !== PROXY_SECRET) {
+      if (PROXY_SECRET && !safeEqual(sub._secret, PROXY_SECRET)) {
         console.log('[ws] Rejected message — invalid secret');
         return;
       }
@@ -563,10 +598,13 @@ wss.on('connection', browserSocket => {
       }
       // Always accept MMSI updates from browser (new shipments added while browsing)
       if (sub.FiltersShipMMSI?.length) {
-        const sorted    = sub.FiltersShipMMSI.slice().sort();
-        const current   = trackedMmsis.slice().sort();
+        const validated = sub.FiltersShipMMSI
+          .map(m => String(m).trim())
+          .filter(m => /^\d{7,9}$/.test(m));
+        const sorted  = validated.slice().sort();
+        const current = trackedMmsis.slice().sort();
         if (JSON.stringify(sorted) !== JSON.stringify(current)) {
-          trackedMmsis = sub.FiltersShipMMSI;
+          trackedMmsis = validated;
           saveConfig();
           console.log('[ws] Updated MMSIs from browser: ' + trackedMmsis.join(', '));
           // Reconnect AIS with new MMSI list
@@ -590,6 +628,9 @@ wss.on('connection', browserSocket => {
 
   browserSocket.on('close', () => {
     connectedCount = Math.max(0, connectedCount - 1);
+    const remaining = Math.max(0, (wsConnsByIp.get(ip) || 1) - 1);
+    if (remaining === 0) wsConnsByIp.delete(ip);
+    else wsConnsByIp.set(ip, remaining);
     console.log(`[ws] Browser disconnected (${connectedCount} total)`);
   });
 
@@ -622,14 +663,13 @@ async function bootstrapMmsis() {
 
 // ── START ─────────────────────────────────────────────────────────────────────
 loadConfig();
-console.log('[config] apiKey after loadConfig: ' + (apiKey ? 'set (' + apiKey.slice(0,8) + '...)' : 'EMPTY'));
 httpServer.listen(PROXY_PORT, async () => {
   console.log('\n=== Maritime Sentinel Proxy ===');
   console.log('    Port: ' + PROXY_PORT);
-  console.log('    AIS_API_KEY set: ' + (process.env.AIS_API_KEY ? 'YES (' + process.env.AIS_API_KEY.slice(0,8) + '...)' : 'NO'));
-  console.log('    SUPABASE_SERVICE_KEY set: ' + (process.env.SUPABASE_SERVICE_KEY ? 'YES' : 'NO'));
-  console.log('    PROXY_SECRET set: ' + (process.env.PROXY_SECRET ? 'YES' : 'NO'));
-  console.log('    ANTHROPIC_API_KEY set: ' + (process.env.ANTHROPIC_API_KEY ? 'YES' : 'NO'));
+  console.log('    AIS_API_KEY:          ' + (process.env.AIS_API_KEY          ? 'SET' : 'NOT SET'));
+  console.log('    SUPABASE_SERVICE_KEY: ' + (process.env.SUPABASE_SERVICE_KEY ? 'SET' : 'NOT SET'));
+  console.log('    PROXY_SECRET:         ' + (process.env.PROXY_SECRET         ? 'SET' : 'NOT SET'));
+  console.log('    ANTHROPIC_API_KEY:    ' + (process.env.ANTHROPIC_API_KEY    ? 'SET' : 'NOT SET'));
   console.log('');
 
   // Always try to load MMSIs from Supabase on startup

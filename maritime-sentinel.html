@@ -2822,7 +2822,7 @@ function updateRow(idx) {
   const chipEl = row.querySelector('.chip');
   if (chipEl) {
     chipEl.className = `chip ${chipType}`;
-    chipEl.innerHTML = `<span class="chip-dot"></span>${chipLabel(s.status)}`;
+    chipEl.innerHTML = '<span class="chip-dot"></span>' + chipLabel(esc(s.status));
   }
 
   // Update AIS timestamp cell
@@ -2911,12 +2911,6 @@ function refreshDetailPanel(idx) {
   const tl = document.getElementById('dpTimeline');
   if (tl) {
     tl.innerHTML = s.timeline.map(t => {
-      // Build the time/badge line
-      let timeHtml = t.time || 'TBC';
-      if (t.aisEta && !t.isArrival) {
-        timeHtml += ' <span style="margin-left:6px;font-size:0.5625rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;background:var(--primary-fixed);color:var(--on-primary-fixed);padding:2px 6px;border-radius:4px;">AIS</span>';
-      }
-
       // For arrival events: show ETA vs ATA comparison
       let comparisonHtml = '';
       if (t.isArrival && t.eta) {
@@ -2932,15 +2926,15 @@ function refreshDetailPanel(idx) {
           }
         }
         comparisonHtml = '<div style="margin-top:4px;font-size:0.6875rem;color:var(--on-surface-variant);">'
-          + 'ETA was: ' + t.eta + delayBadge
+          + 'ETA was: ' + esc(t.eta) + delayBadge
           + '</div>';
       }
 
       return '<div class="timeline-item">'
         + '<div class="timeline-dot ' + t.state + '"></div>'
         + '<div style="flex:1;min-width:0;">'
-        + '<div class="timeline-event">' + t.event + '</div>'
-        + '<div class="timeline-time">' + timeHtml + '</div>'
+        + '<div class="timeline-event">' + esc(t.event) + '</div>'
+        + '<div class="timeline-time">' + esc(t.time || 'TBC') + (t.aisEta && !t.isArrival ? ' <span style="margin-left:6px;font-size:0.5625rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;background:var(--primary-fixed);color:var(--on-primary-fixed);padding:2px 6px;border-radius:4px;">AIS</span>' : '') + '</div>'
         + comparisonHtml
         + '</div>'
         + '</div>';
@@ -3102,10 +3096,7 @@ function openDetail(idx) {
 
   const tl = document.getElementById('dpTimeline');
   tl.innerHTML = s.timeline.map(t => {
-    let timeHtml = t.time || 'TBC';
-    if (t.aisEta && !t.isArrival) {
-      timeHtml += ' <span style="margin-left:6px;font-size:0.5625rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;background:var(--primary-fixed);color:var(--on-primary-fixed);padding:2px 6px;border-radius:4px;">AIS</span>';
-    }
+
     let comparisonHtml = '';
     if (t.isArrival && t.eta) {
       const dd = t.delayDays;
@@ -3115,13 +3106,13 @@ function openDetail(idx) {
         else if (dd > 0) delayBadge = ' <span style="font-size:0.5625rem;font-weight:800;background:var(--error-container);color:var(--on-error-container);padding:2px 6px;border-radius:4px;">+' + dd + 'd LATE</span>';
         else delayBadge = ' <span style="font-size:0.5625rem;font-weight:800;background:rgba(12,82,22,0.12);color:var(--on-tertiary-fixed-variant);padding:2px 6px;border-radius:4px;">' + Math.abs(dd) + 'd EARLY</span>';
       }
-      comparisonHtml = '<div style="margin-top:4px;font-size:0.6875rem;color:var(--on-surface-variant);">ETA was: ' + t.eta + delayBadge + '</div>';
+      comparisonHtml = '<div style="margin-top:4px;font-size:0.6875rem;color:var(--on-surface-variant);">ETA was: ' + esc(t.eta) + delayBadge + '</div>';
     }
     return '<div class="timeline-item">'
       + '<div class="timeline-dot ' + t.state + '"></div>'
       + '<div style="flex:1;min-width:0;">'
-      + '<div class="timeline-event">' + t.event + '</div>'
-      + '<div class="timeline-time">' + timeHtml + '</div>'
+      + '<div class="timeline-event">' + esc(t.event) + '</div>'
+      + '<div class="timeline-time">' + esc(t.time || 'TBC') + (t.aisEta && !t.isArrival ? ' <span style="margin-left:6px;font-size:0.5625rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;background:var(--primary-fixed);color:var(--on-primary-fixed);padding:2px 6px;border-radius:4px;">AIS</span>' : '') + '</div>'
       + comparisonHtml
       + '</div></div>';
   }).join('');
@@ -3401,11 +3392,11 @@ function renderTable() {
       + '<td style="padding:20px 28px;white-space:nowrap;">'
       + '<div class="container-id-cell">'
       + '<div class="container-icon ' + iconType + '"><span class="material-symbols-outlined">' + iconName + '</span></div>'
-      + '<span class="container-id">' + s.id + '</span>'
+      + '<span class="container-id">' + esc(s.id) + '</span>'
       + '</div></td>'
-      + '<td style="padding:20px;"><span class="port-text">' + s.origin + '</span></td>'
-      + '<td style="padding:20px;"><span class="port-text">' + s.dest + '</span></td>'
-      + '<td style="padding:20px;"><span class="vessel-name">' + s.vessel + '</span></td>'
+      + '<td style="padding:20px;"><span class="port-text">' + esc(s.origin) + '</span></td>'
+      + '<td style="padding:20px;"><span class="port-text">' + esc(s.dest) + '</span></td>'
+      + '<td style="padding:20px;"><span class="vessel-name">' + esc(s.vessel) + '</span></td>'
       + '<td style="padding:20px;white-space:nowrap;">'
       + '<span class="chip ' + chipType + '"><span class="chip-dot"></span>' + chipLabel(s.status) + '</span>'
       + '</td>'
@@ -3476,8 +3467,8 @@ function renderTable() {
   if (destList) {
     const dests = [...new Set(shipments.map(s => s.dest).filter(Boolean))].sort();
     destList.innerHTML = dests.map(d =>
-      '<label class="dropdown-item"><input type="radio" name="filterDest" value="' + d + '"' +
-      (filterDest === d ? ' checked' : '') + '> ' + d + '</label>'
+      '<label class="dropdown-item"><input type="radio" name="filterDest" value="' + esc(d) + '"' +
+      (filterDest === d ? ' checked' : '') + '> ' + esc(d) + '</label>'
     ).join('');
     destList.querySelectorAll('input[name="filterDest"]').forEach(el => {
       el.addEventListener('change', () => {
@@ -3921,9 +3912,9 @@ function showVesselResults() {
   if (vesselSearchResults.length === 0) { hideVesselResults(); return; }
   box.innerHTML = vesselSearchResults.map((v, i) =>
     '<div class="vessel-result-item" data-idx="' + i + '">' +
-    '<div class="vri-name">' + v.name + '</div>' +
+    '<div class="vri-name">' + esc(v.name) + '</div>' +
     '<div class="vri-meta">' +
-      (v.mmsi ? 'MMSI: ' + v.mmsi : '') +
+      (v.mmsi ? 'MMSI: ' + esc(String(v.mmsi)) : '') +
       (v.flag ? ' &nbsp;|&nbsp; ' + v.flag : '') +
       (v.type ? ' &nbsp;|&nbsp; ' + v.type : '') +
     '</div></div>'
@@ -4681,11 +4672,11 @@ function logRowHtml(s, rowIdx) {
   return '<div class="log-row" data-drawer="' + drawerId + '" onclick="toggleLogDrawer(this.dataset.drawer, this)">'
     + '<div class="log-row-main">'
     + '<div class="log-col-id">'
-    + '<div style="font-weight:800;color:var(--primary);font-size:0.875rem;">' + s.id + '</div>'
-    + '<div style="font-size:0.75rem;color:var(--on-surface-variant);margin-top:2px;">' + s.vessel + '</div>'
+    + '<div style="font-weight:800;color:var(--primary);font-size:0.875rem;">' + esc(s.id) + '</div>'
+    + '<div style="font-size:0.75rem;color:var(--on-surface-variant);margin-top:2px;">' + esc(s.vessel) + '</div>'
     + '</div>'
     + '<div class="log-col-route" style="font-size:0.8125rem;color:var(--on-surface-variant);">'
-    + s.origin + ' → ' + s.dest
+    + esc(s.origin) + ' → ' + esc(s.dest)
     + '</div>'
     + '<div class="log-col-slip" style="font-size:0.875rem;text-align:center;">' + slipText + '</div>'
     + '<div class="log-col-date" style="font-size:0.8125rem;color:var(--on-surface-variant);text-align:right;">'
@@ -4714,8 +4705,8 @@ function logRowHtml(s, rowIdx) {
             const slipNote = t.slipAtStop ? ' <span style="color:var(--error);font-size:0.6875rem;font-weight:700;">(+' + t.slipAtStop + 'd)</span>' : '';
             return '<div style="display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid var(--surface-container-high);">'
               + '<div style="width:6px;height:6px;border-radius:50%;background:' + dotColor + ';flex-shrink:0;"></div>'
-              + '<div style="flex:1;font-size:0.8125rem;font-weight:600;color:var(--on-surface);">' + t.event + slipNote + '</div>'
-              + '<div style="font-size:0.75rem;color:var(--on-surface-variant);white-space:nowrap;">' + (t.time || '') + '</div>'
+              + '<div style="flex:1;font-size:0.8125rem;font-weight:600;color:var(--on-surface);">' + esc(t.event) + slipNote + '</div>'
+              + '<div style="font-size:0.75rem;color:var(--on-surface-variant);white-space:nowrap;">' + esc(t.time || '') + '</div>'
               + '</div>';
           }).join('')
         : '<div style="font-size:0.8125rem;color:var(--on-surface-variant);">No port stops recorded</div>')
