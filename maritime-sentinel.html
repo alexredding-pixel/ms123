@@ -1339,10 +1339,10 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
         <div style="font-size:0.75rem;color:var(--on-surface-variant);margin-top:2px;">via aisstream.io WebSocket API</div>
       </div>
     </div>
-    <p style="font-size:0.8125rem;color:var(--on-surface-variant);line-height:1.6;margin:16px 0;">Enter your free API key from <strong style="color:var(--primary);">aisstream.io</strong> to begin receiving live position, speed, and status updates for your tracked vessels.</p>
-    <label style="font-size:0.625rem;font-weight:800;letter-spacing:0.15em;text-transform:uppercase;color:var(--on-surface-variant);display:block;margin-bottom:8px;">API Key</label>
+    <p style="font-size:0.8125rem;color:var(--on-surface-variant);line-height:1.6;margin:16px 0;">The proxy server manages the AIS connection 24/7. If the connection has dropped, paste your <strong style="color:var(--primary);">aisstream.io</strong> key here to restore it for this session — it will be sent to the proxy directly. For a permanent fix, update <code style="background:var(--surface-container-high);padding:2px 5px;border-radius:4px;font-family:DM Mono,monospace;font-size:0.75rem;">AIS_API_KEY</code> in your Railway environment variables and redeploy.</p>
+    <label style="font-size:0.625rem;font-weight:800;letter-spacing:0.15em;text-transform:uppercase;color:var(--on-surface-variant);display:block;margin-bottom:8px;">aisstream.io API Key</label>
     <input id="apiKeyInput" type="text" placeholder="Paste your aisstream.io API key..." style="width:100%;background:var(--surface-container-high);border:none;outline:none;border-radius:10px;padding:12px 14px;font-size:0.875rem;font-family:inherit;color:var(--on-surface);margin-bottom:6px;"/>
-    <p style="font-size:0.6875rem;color:var(--outline);margin-bottom:20px;">Your key is saved locally in your browser. <span id="clearKeyLink" style="color:var(--primary);cursor:pointer;text-decoration:underline;" id="clearKeyLink">Clear saved key</span></p>
+    <p style="font-size:0.6875rem;color:var(--outline);margin-bottom:20px;">Key is sent to the proxy and held in memory only — never stored in the browser.</p>
     <div style="display:flex;gap:10px;">
       <button id="submitKeyBtn" style="flex:1;background:var(--primary);color:white;border:none;border-radius:12px;padding:13px;font-size:0.9375rem;font-weight:700;font-family:inherit;cursor:pointer;">Connect</button>
       <button id="cancelKeyBtn" style="background:var(--surface-container-high);color:var(--on-surface);border:none;border-radius:12px;padding:13px 18px;font-size:0.9375rem;font-weight:700;font-family:inherit;cursor:pointer;">Cancel</button>
@@ -3139,12 +3139,32 @@ function openApiModal() {
 function closeApiModal() {
   document.getElementById('apiModal').style.display = 'none';
 }
-function submitApiKey() {
+async function submitApiKey() {
   const key = document.getElementById('apiKeyInput').value.trim();
   if (!key) return;
-  // AIS key held in memory only — not persisted to localStorage
   closeApiModal();
-  connectAIS(key);
+
+  // Send the key to the proxy so it can manage the AIS connection server-side.
+  // The browser never connects directly to aisstream — the proxy handles that.
+  try {
+    const res = await fetch(PROXY_BASE + '/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-proxy-secret': getProxySecret() },
+      body: JSON.stringify({ apiKey: key, mmsis: TRACKED_MMSIS }),
+    });
+    if (res.ok) {
+      console.log('[apiKey] Sent key to proxy — connecting server-managed');
+    } else {
+      console.warn('[apiKey] Proxy /subscribe returned', res.status);
+    }
+  } catch(e) {
+    console.warn('[apiKey] Could not reach proxy:', e.message);
+  }
+
+  // Always connect in server-managed mode — never send the raw key from the browser
+  wsApiKey = 'server';
+  setConnectionStatus('connecting');
+  connectAIS('server');
 }
 
 // -- LEAFLET MAP ---------------------------------------------------------------
