@@ -199,7 +199,7 @@ function saveConfig() {
 // Log an arrival event into voyage_events using a special ATA: prefix
 // so the dashboard replay can distinguish arrivals from transit events.
 async function logArrivalEvent(mmsi, destination, lat, lng, timestamp) {
-  const dest = destination.trim().toUpperCase();
+  const dest   = destination.trim().toUpperCase();
   const ataKey = 'ATA:' + dest;
 
   // Dedup: skip if we already logged an arrival at this port in last 2 hours
@@ -214,14 +214,42 @@ async function logArrivalEvent(mmsi, destination, lat, lng, timestamp) {
 
   await supabase('POST', 'voyage_events', {
     mmsi:         mmsi,
-    destination:  ataKey,          // "ATA:ROTTERDAM" — signals arrival to dashboard
+    destination:  ataKey,
     eta:          null,
     lat:          lat  || null,
     lng:          lng  || null,
-    dest_changed: false,           // false = arrival, not a destination change
+    dest_changed: false,
     timestamp:    timestamp || new Date().toISOString(),
   });
   console.log('[arrival] ' + mmsi + ' arrived at ' + dest + ' @ ' + (timestamp || 'now'));
+}
+
+// Log a departure event — stored as ATD:PORTNAME so the dashboard can stamp
+// an Actual Time of Departure on the port's timeline step.
+async function logDepartureEvent(mmsi, destination, timestamp) {
+  const dest   = destination.trim().toUpperCase();
+  const atdKey = 'ATD:' + dest;
+
+  // Dedup: skip if we already logged a departure from this port in last 2 hours
+  const twoHoursAgo = new Date(Date.now() - 7200000).toISOString();
+  const check = await supabase('GET', 'voyage_events', null,
+    'mmsi=eq.' + mmsi +
+    '&destination=eq.' + encodeURIComponent(atdKey) +
+    '&timestamp=gte.' + twoHoursAgo +
+    '&limit=1'
+  );
+  if (check.ok && check.data && check.data.length > 0) return;
+
+  await supabase('POST', 'voyage_events', {
+    mmsi:         mmsi,
+    destination:  atdKey,
+    eta:          null,
+    lat:          null,
+    lng:          null,
+    dest_changed: false,
+    timestamp:    timestamp || new Date().toISOString(),
+  });
+  console.log('[departure] ' + mmsi + ' departed ' + dest + ' @ ' + (timestamp || 'now'));
 }
 
 // ── AIS MESSAGE INSPECTION ────────────────────────────────────────────────────
@@ -248,18 +276,22 @@ async function inspectMessage(raw) {
                       timestamp: new Date().toISOString() });
       }
 
-      // ── Arrival detection (mirrors dashboard handleAISMessage logic) ──────────
-      // Vessel transitions from underway → moored/anchored at low speed
+      // ── Arrival & departure detection ─────────────────────────────────────────
       if (nav != null) {
-        const newStatus  = NAV_STATUS_MAP[nav] || 'In Transit';
-        const prevStatus = lastNavStatus[mmsi]  || 'In Transit';
-        const nowInPort  = (newStatus === 'In Port' || newStatus === 'At Anchor')
-                        && sog != null && sog < 0.5;
+        const newStatus   = NAV_STATUS_MAP[nav] || 'In Transit';
+        const prevStatus  = lastNavStatus[mmsi]  || 'In Transit';
+        const nowInPort   = (newStatus === 'In Port' || newStatus === 'At Anchor')
+                         && sog != null && sog < 0.5;
+        const nowUnderway = newStatus === 'In Transit' && sog != null && sog >= 0.5;
         const wasUnderway = prevStatus === 'In Transit';
+        const wasInPort   = prevStatus === 'In Port' || prevStatus === 'At Anchor';
+        const aisTimestamp = meta.time_utc || meta.TimeUtc || new Date().toISOString();
 
         if (nowInPort && wasUnderway && lastDest[mmsi]) {
-          const aisTimestamp = meta.time_utc || meta.TimeUtc || new Date().toISOString();
           await logArrivalEvent(mmsi, lastDest[mmsi], lat, lng, aisTimestamp);
+        }
+        if (nowUnderway && wasInPort && lastDest[mmsi]) {
+          await logDepartureEvent(mmsi, lastDest[mmsi], aisTimestamp);
         }
         lastNavStatus[mmsi] = newStatus;
       }

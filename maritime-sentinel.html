@@ -2537,10 +2537,16 @@ function handleAISMessage(msg) {
       && pr.Sog != null && pr.Sog < 0.5;
     const wasUnderway = prevStatus === 'In Transit';
     if (nowInPort && wasUnderway && s.destination) {
-      // Pass AIS message timestamp so ATA reflects when vessel actually arrived,
-      // not when the browser happened to receive the message
       const aisTimestamp = meta.time_utc || meta.TimeUtc || null;
       logArrivalEvent(s, aisTimestamp);
+    }
+
+    // Detect departure: vessel transitions from In Port/At Anchor → In Transit
+    const nowUnderway  = s.status === 'In Transit' && pr.Sog != null && pr.Sog >= 0.5;
+    const wasInPort    = prevStatus === 'In Port' || prevStatus === 'At Anchor';
+    if (nowUnderway && wasInPort) {
+      const aisTimestamp = meta.time_utc || meta.TimeUtc || null;
+      logDepartureEvent(s, aisTimestamp);
     }
 
     s.lastUpdate = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
@@ -2719,6 +2725,28 @@ function freezeWaypointSlip(s, oldDest) {
   const slipMs = lastEta - firstEta;
   s.frozenSlipMs = (s.frozenSlipMs || 0) + slipMs;
   console.log('[slip] Froze ' + slipMs/3600000 + 'h slip from ' + oldDest + ' total frozen: ' + s.frozenSlipMs/3600000 + 'h');
+}
+
+// -- DEPARTURE EVENT LOGGING --------------------------------------------------
+// Called when vessel transitions from In Port → In Transit.
+// Stamps an ATD on the most recent arrival/transit step for the port just left.
+function logDepartureEvent(s, aisTimestamp) {
+  if (!s.timeline || s.timeline.length === 0) return;
+  const now    = aisTimestamp ? new Date(aisTimestamp) : new Date();
+  const atdStr = now.toLocaleDateString('en-GB', {day:'2-digit', month:'short'})
+    + ' ' + now.toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
+
+  // Find the most recent arrival or transit step that doesn't already have an ATD
+  // Search backwards — the most recent port stop is what we're departing from
+  for (let i = s.timeline.length - 1; i >= 0; i--) {
+    const t = s.timeline[i];
+    if ((t.isArrival || t.isTransit) && t.state === 'done' && !t.atd) {
+      t.atd = atdStr;
+      console.log('[departure] ' + s.vessel + ' departed ' + t.event + ' @ ' + atdStr);
+      saveShipments();
+      return;
+    }
+  }
 }
 
 // -- ARRIVAL EVENT LOGGING ---------------------------------------------------
@@ -2932,7 +2960,8 @@ function refreshDetailPanel(idx) {
         }
         comparisonHtml = '<div style="margin-top:4px;font-size:0.6875rem;color:var(--on-surface-variant);">'
           + 'ETA was: ' + esc(t.eta) + delayBadge
-          + '</div>';
+          + '</div>'
+          + (t.atd ? '<div style="margin-top:2px;font-size:0.6875rem;color:var(--on-surface-variant);">ATD: ' + esc(t.atd) + '</div>' : '');
       }
 
       return '<div class="timeline-item">'
@@ -2940,6 +2969,7 @@ function refreshDetailPanel(idx) {
         + '<div style="flex:1;min-width:0;">'
         + '<div class="timeline-event">' + esc(t.event) + '</div>'
         + '<div class="timeline-time">' + esc(t.time || 'TBC') + (t.aisEta && !t.isArrival ? ' <span style="margin-left:6px;font-size:0.5625rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;background:var(--primary-fixed);color:var(--on-primary-fixed);padding:2px 6px;border-radius:4px;">AIS</span>' : '') + '</div>'
+        + (!t.isArrival && t.atd ? '<div style="margin-top:2px;font-size:0.6875rem;color:var(--on-surface-variant);">ATD: ' + esc(t.atd) + '</div>' : '')
         + comparisonHtml
         + '</div>'
         + '</div>';
@@ -3111,13 +3141,15 @@ function openDetail(idx) {
         else if (dd > 0) delayBadge = ' <span style="font-size:0.5625rem;font-weight:800;background:var(--error-container);color:var(--on-error-container);padding:2px 6px;border-radius:4px;">+' + dd + 'd LATE</span>';
         else delayBadge = ' <span style="font-size:0.5625rem;font-weight:800;background:rgba(12,82,22,0.12);color:var(--on-tertiary-fixed-variant);padding:2px 6px;border-radius:4px;">' + Math.abs(dd) + 'd EARLY</span>';
       }
-      comparisonHtml = '<div style="margin-top:4px;font-size:0.6875rem;color:var(--on-surface-variant);">ETA was: ' + esc(t.eta) + delayBadge + '</div>';
+      comparisonHtml = '<div style="margin-top:4px;font-size:0.6875rem;color:var(--on-surface-variant);">ETA was: ' + esc(t.eta) + delayBadge + '</div>'
+        + (t.atd ? '<div style="margin-top:2px;font-size:0.6875rem;color:var(--on-surface-variant);">ATD: ' + esc(t.atd) + '</div>' : '');
     }
     return '<div class="timeline-item">'
       + '<div class="timeline-dot ' + t.state + '"></div>'
       + '<div style="flex:1;min-width:0;">'
       + '<div class="timeline-event">' + esc(t.event) + '</div>'
       + '<div class="timeline-time">' + esc(t.time || 'TBC') + (t.aisEta && !t.isArrival ? ' <span style="margin-left:6px;font-size:0.5625rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;background:var(--primary-fixed);color:var(--on-primary-fixed);padding:2px 6px;border-radius:4px;">AIS</span>' : '') + '</div>'
+      + (!t.isArrival && t.atd ? '<div style="margin-top:2px;font-size:0.6875rem;color:var(--on-surface-variant);">ATD: ' + esc(t.atd) + '</div>' : '')
       + comparisonHtml
       + '</div></div>';
   }).join('');
@@ -3812,6 +3844,29 @@ async function fetchVoyageEvents() {
           anyChange = true;
           return;
         }
+
+        // ── Server-side departure event ───────────────────────────────────────
+        // Proxy logs departures as "ATD:PORTNAME" — stamp ATD on the matching step.
+        if (raw.startsWith('ATD:')) {
+          const dest    = raw.slice(4).trim();
+          const destKey = dest.toUpperCase();
+          const ts      = new Date(ev.timestamp);
+          const atdStr  = ts.toLocaleDateString('en-GB', {day:'2-digit', month:'short'})
+            + ' ' + ts.toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
+          const shortDest = destKey.slice(0, 5);
+
+          // Find the matching arrival or transit step and stamp ATD if not already set
+          for (let i = (s.timeline || []).length - 1; i >= 0; i--) {
+            const t = s.timeline[i];
+            if ((t.isArrival || t.isTransit) && !t.atd &&
+                t.event.toUpperCase().replace(/[^A-Z0-9]/g,'').includes(shortDest.replace(/[^A-Z0-9]/g,''))) {
+              t.atd = atdStr;
+              anyChange = true;
+              break;
+            }
+          }
+          return;
+        }
         // ─────────────────────────────────────────────────────────────────────
 
         const dest     = raw;
@@ -3853,7 +3908,16 @@ async function fetchVoyageEvents() {
             // Update final step ETA if we have one
             if (etaStr) { finalStep.time = etaStr; finalStep.aisEta = true; }
           }
-        } else if (existingIdx < 0 && finalStep) {
+        } else if (existingIdx >= 0) {
+          // Port already in timeline — update ETA if this event has a newer one
+          // and the step hasn't been converted to an arrival yet
+          const existing = s.timeline[existingIdx];
+          if (!existing.isArrival && etaStr) {
+            existing.time   = etaStr;
+            existing.aisEta = true;
+            anyChange = true;
+          }
+        } else if (finalStep) {
           // New intermediate port not yet in timeline — insert Transit step before final
           const transitStep = {
             event:     'Transit via ' + portName,
