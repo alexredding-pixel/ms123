@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://*.supabase.co https://ms123-production.up.railway.app wss://ms123-production.up.railway.app; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src https://fonts.gstatic.com https://cdnjs.cloudflare.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://*.basemaps.cartocdn.com https://*.cartocdn.com https://cdnjs.cloudflare.com https://lh3.googleusercontent.com; connect-src 'self' https://*.supabase.co https://ms123-production.up.railway.app wss://ms123-production.up.railway.app https://api.anthropic.com https://*.basemaps.cartocdn.com https://*.cartocdn.com;">
-<title>Maritime Sentinel | Container Tracking Dashboard</title>
+<title>Shipment Tracker | Container Tracking Dashboard</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -140,7 +140,6 @@ html, body {
 
 .sidebar-logo {
   padding: 28px 24px 20px;
-  border-bottom: 1px solid rgba(0,23,54,0.1);
 }
 .sidebar-logo h1 {
   font-size: 1.25rem; font-weight: 900; letter-spacing: -0.02em;
@@ -1203,6 +1202,21 @@ tr.selected .row-chevron { background: var(--primary-fixed); color: var(--primar
 .form-divider {
   height: 1px; background: var(--surface-container-high); margin: 20px 0;
 }
+
+/* ── CURRENCY TOGGLE BUTTONS ─────────────────── */
+.ccy-toggle {
+  display: flex; gap: 4px;
+  background: var(--surface-container-high);
+  border-radius: 10px; padding: 4px;
+}
+.ccy-btn {
+  flex: 1; border: none; border-radius: 7px; padding: 7px 4px;
+  font-size: 0.8125rem; font-weight: 700; font-family: inherit;
+  cursor: pointer; transition: all 0.15s;
+  background: transparent; color: var(--on-surface-variant);
+}
+.ccy-btn:hover { background: var(--surface-container-highest); color: var(--on-surface); }
+.ccy-btn.active { background: var(--primary); color: white; }
 .btn-primary {
   flex: 1; background: var(--primary); color: white;
   border: none; border-radius: 12px; padding: 13px;
@@ -1232,8 +1246,8 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
 <div id="loginScreen" style="display:none;position:fixed;inset:0;z-index:1000;background:var(--surface-container-low);align-items:center;justify-content:center;flex-direction:column;">
   <div style="width:400px;max-width:92vw;">
     <div style="text-align:center;margin-bottom:32px;">
-      <div style="font-size:2rem;font-weight:900;color:var(--primary);letter-spacing:-0.02em;line-height:1;">Maritime<br>Sentinel</div>
-      <div style="font-size:0.875rem;color:var(--on-surface-variant);margin-top:8px;">Vessel Tracking Authority</div>
+      <div style="font-size:2rem;font-weight:900;color:var(--primary);letter-spacing:-0.02em;line-height:1;">Shipment<br>Tracker</div>
+      <div style="font-size:0.875rem;color:var(--on-surface-variant);margin-top:8px;">AIS Stream Data</div>
     </div>
     <div style="background:var(--surface-container-lowest);border-radius:20px;padding:32px;box-shadow:0 20px 60px rgba(0,23,54,0.12);">
       <div style="font-size:1.125rem;font-weight:900;color:var(--primary);margin-bottom:6px;">Sign in</div>
@@ -1261,7 +1275,7 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
       </div>
     </div>
     <div style="text-align:center;margin-top:20px;font-size:0.75rem;color:var(--outline);">
-      Maritime Sentinel &mdash; Internal Operations Platform
+      Shipment Tracker &mdash; Internal Operations Platform
     </div>
   </div>
 </div>
@@ -1269,8 +1283,8 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
 <!-- SIDEBAR -->
 <aside class="sidebar">
   <div class="sidebar-logo">
-    <h1>Maritime<br>Sentinel</h1>
-    <p>Vessel Tracking Authority</p>
+    <h1>Shipment<br>Tracker</h1>
+    <p>AIS Stream Data</p>
   </div>
   <nav class="nav-items">
     <a class="nav-item active" id="navDashboard" href="#">
@@ -1662,7 +1676,7 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
 
     <div style="margin-bottom:32px;">
       <h2 style="font-size:1.25rem;font-weight:900;color:var(--primary);margin:0 0 4px;">Settings</h2>
-      <p style="font-size:0.875rem;color:var(--on-surface-variant);margin:0;">Customise your Maritime Sentinel experience.</p>
+      <p style="font-size:0.875rem;color:var(--on-surface-variant);margin:0;">Customise your Shipment Tracker experience.</p>
     </div>
 
     <!-- Appearance -->
@@ -1941,41 +1955,47 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
         <div class="form-row">
           <div class="form-group">
             <label>Container Type</label>
-            <select id="f-cargo">
-              <option value="">Select...</option>
-              <option value="40'">40'</option>
-              <option value="20'">20'</option>
-              <option value="LCL">LCL</option>
-            </select>
+            <input type="text" id="f-cargo" list="cargoList" placeholder="e.g. 40', 20', LCL" autocomplete="off"/>
+            <datalist id="cargoList">
+              <option value="40'">
+              <option value="20'">
+              <option value="LCL">
+              <option value="40' HC">
+              <option value="Bulk">
+            </datalist>
           </div>
           <div class="form-group">
             <label>Carrier</label>
-            <select id="f-carrier">
-              <option value="">Select...</option>
-              <option value="MSC">MSC</option>
-              <option value="Maersk">Maersk</option>
-              <option value="CMA CGM">CMA CGM</option>
-              <option value="COSCO">COSCO</option>
-              <option value="Hapag-Lloyd">Hapag-Lloyd</option>
-              <option value="ONE">ONE</option>
-              <option value="ZIM">ZIM</option>
-            </select>
+            <input type="text" id="f-carrier" list="carrierList" placeholder="e.g. MSC, Maersk" autocomplete="off"/>
+            <datalist id="carrierList">
+              <option value="MSC">
+              <option value="Maersk">
+              <option value="CMA CGM">
+              <option value="COSCO">
+              <option value="Hapag-Lloyd">
+              <option value="Evergreen">
+              <option value="ONE">
+              <option value="HMM">
+              <option value="ZIM">
+            </datalist>
           </div>
         </div>
         <!-- Incoterms -->
         <div class="form-row single">
           <div class="form-group">
             <label>Incoterms</label>
-            <select id="f-incoterms" onchange="handleIncotermsChange(this.value)">
-              <option value="">Select...</option>
-              <option value="EXW">EXW — Ex Works</option>
-              <option value="FCA">FCA — Free Carrier</option>
-              <option value="FOB">FOB — Free On Board</option>
-              <option value="CFR">CFR — Cost &amp; Freight</option>
-              <option value="CIF">CIF — Cost, Insurance &amp; Freight</option>
-              <option value="CPT">CPT — Carriage Paid To</option>
-              <option value="DAP">DAP — Delivered At Place</option>
-            </select>
+            <input type="text" id="f-incoterms" list="incoList" placeholder="e.g. FOB, DAP, CIF"
+              autocomplete="off" oninput="handleIncotermsChange(this.value)"/>
+            <datalist id="incoList">
+              <option value="EXW">
+              <option value="FCA">
+              <option value="FOB">
+              <option value="CFR">
+              <option value="CIF">
+              <option value="CPT">
+              <option value="DAP">
+              <option value="DDP">
+            </datalist>
           </div>
         </div>
         <!-- Weight + Pallets -->
@@ -2004,11 +2024,12 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
         <div class="form-row" style="grid-template-columns:120px 1fr;">
           <div class="form-group">
             <label>Currency</label>
-            <select id="f-local-ccy">
-              <option value="USD">USD $</option>
-              <option value="GBP">GBP £</option>
-              <option value="EUR">EUR €</option>
-            </select>
+            <div class="ccy-toggle" id="f-local-ccy-wrap">
+              <button type="button" class="ccy-btn active" data-val="USD" onclick="setCcy('f-local-ccy','USD')">USD</button>
+              <button type="button" class="ccy-btn" data-val="GBP" onclick="setCcy('f-local-ccy','GBP')">GBP</button>
+              <button type="button" class="ccy-btn" data-val="EUR" onclick="setCcy('f-local-ccy','EUR')">EUR</button>
+              <input type="hidden" id="f-local-ccy" value="USD"/>
+            </div>
           </div>
           <div class="form-group">
             <label>Local Cost (origin charges)</label>
@@ -2020,11 +2041,12 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
         <div class="form-row" style="grid-template-columns:120px 1fr;">
           <div class="form-group">
             <label>Currency</label>
-            <select id="f-freight-ccy">
-              <option value="USD">USD $</option>
-              <option value="GBP">GBP £</option>
-              <option value="EUR">EUR €</option>
-            </select>
+            <div class="ccy-toggle" id="f-freight-ccy-wrap">
+              <button type="button" class="ccy-btn active" data-val="USD" onclick="setCcy('f-freight-ccy','USD')">USD</button>
+              <button type="button" class="ccy-btn" data-val="GBP" onclick="setCcy('f-freight-ccy','GBP')">GBP</button>
+              <button type="button" class="ccy-btn" data-val="EUR" onclick="setCcy('f-freight-ccy','EUR')">EUR</button>
+              <input type="hidden" id="f-freight-ccy" value="USD"/>
+            </div>
           </div>
           <div class="form-group">
             <label>Sea Freight</label>
@@ -2036,11 +2058,12 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
         <div class="form-row" style="grid-template-columns:120px 1fr;">
           <div class="form-group">
             <label>Currency</label>
-            <select id="f-dest-ccy">
-              <option value="USD">USD $</option>
-              <option value="GBP">GBP £</option>
-              <option value="EUR">EUR €</option>
-            </select>
+            <div class="ccy-toggle" id="f-dest-ccy-wrap">
+              <button type="button" class="ccy-btn active" data-val="USD" onclick="setCcy('f-dest-ccy','USD')">USD</button>
+              <button type="button" class="ccy-btn" data-val="GBP" onclick="setCcy('f-dest-ccy','GBP')">GBP</button>
+              <button type="button" class="ccy-btn" data-val="EUR" onclick="setCcy('f-dest-ccy','EUR')">EUR</button>
+              <input type="hidden" id="f-dest-ccy" value="USD"/>
+            </div>
           </div>
           <div class="form-group">
             <label>Destination Clearance &amp; Delivery</label>
@@ -2147,7 +2170,7 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
     <div style="padding:28px 28px 0;display:flex;align-items:flex-start;justify-content:space-between;">
       <div>
         <div style="font-size:1.125rem;font-weight:900;color:var(--primary);margin-bottom:4px;">Getting Started</div>
-        <div style="font-size:0.8rem;color:var(--on-surface-variant);">Maritime Sentinel — Cargo Tracking Guide</div>
+        <div style="font-size:0.8rem;color:var(--on-surface-variant);">Shipment Tracker — Cargo Tracking Guide</div>
       </div>
       <button id="closeHelpBtn" style="background:none;border:none;cursor:pointer;padding:4px;color:var(--on-surface-variant);">
         <span class="material-symbols-outlined">close</span>
@@ -3654,10 +3677,13 @@ function openAddModal() {
   document.getElementById('f-pallets').value = '';
   document.getElementById('f-carrier').value = '';
   document.getElementById('f-local-ccy').value = 'USD';
+  setCcyValue('f-local-ccy', 'USD');
   document.getElementById('f-local-cost').value = '';
   document.getElementById('f-freight-ccy').value = 'USD';
+  setCcyValue('f-freight-ccy', 'USD');
   document.getElementById('f-freight-cost').value = '';
   document.getElementById('f-dest-ccy').value = 'USD';
+  setCcyValue('f-dest-ccy', 'USD');
   document.getElementById('f-dest-cost').value = '';
   document.getElementById('f-load-date').value = '';
   document.getElementById('f-arrive-date').value = '';
@@ -5764,14 +5790,45 @@ let pendingModalSid     = null;
 // These incoterms mean the seller covers origin costs — grey out local cost field
 const INCOTERMS_NO_LOCAL_COST = ['CPT', 'DAP', 'FOB', 'CIF', 'CFR'];
 
+// Currency toggle helper — used by the ccy-btn segmented buttons in the form
+function setCcy(fieldId, val) {
+  const hidden = document.getElementById(fieldId);
+  if (hidden) hidden.value = val;
+  const wrap = document.getElementById(fieldId + '-wrap');
+  if (wrap) wrap.querySelectorAll('.ccy-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.val === val);
+  });
+}
+
+// Helper to read currency value from either hidden input (new) or select (legacy)
+function getCcyValue(fieldId) {
+  const el = document.getElementById(fieldId);
+  return el ? el.value : '';
+}
+
+// Helper to set currency value in either hidden input+buttons or select
+function setCcyValue(fieldId, val) {
+  const el = document.getElementById(fieldId);
+  if (!el) return;
+  if (el.tagName === 'SELECT') { el.value = val; return; }
+  // It's a hidden input inside .ccy-toggle
+  el.value = val;
+  const wrap = document.getElementById(fieldId + '-wrap');
+  if (wrap) wrap.querySelectorAll('.ccy-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.val === val);
+  });
+}
+
 function handleIncotermsChange(value) {
   const localCostField = document.getElementById('f-local-cost');
-  const localCcyField  = document.getElementById('f-local-ccy');
-  const disable = INCOTERMS_NO_LOCAL_COST.includes(value);
+  const localCcyWrap   = document.getElementById('f-local-ccy-wrap');
+  const disable = INCOTERMS_NO_LOCAL_COST.includes(value.toUpperCase().slice(0,3));
   localCostField.disabled = disable;
   localCostField.style.opacity = disable ? '0.4' : '1';
-  localCcyField.disabled  = disable;
-  localCcyField.style.opacity  = disable ? '0.4' : '1';
+  if (localCcyWrap) {
+    localCcyWrap.querySelectorAll('.ccy-btn').forEach(b => b.disabled = disable);
+    localCcyWrap.style.opacity = disable ? '0.4' : '1';
+  }
   if (disable) localCostField.value = '';
 }
 
@@ -5804,10 +5861,13 @@ function openEditModal(idx) {
   document.getElementById('f-weight').value         = s.weight || '';
   document.getElementById('f-pallets').value        = s.pallets || '';
   document.getElementById('f-local-ccy').value      = s.localCcy || 'USD';
+  setCcyValue('f-local-ccy', s.localCcy || 'USD');
   document.getElementById('f-local-cost').value     = s.localCost || '';
   document.getElementById('f-freight-ccy').value    = s.freightCcy || 'USD';
+  setCcyValue('f-freight-ccy', s.freightCcy || 'USD');
   document.getElementById('f-freight-cost').value   = s.freightCost || '';
   document.getElementById('f-dest-ccy').value       = s.destCcy || 'USD';
+  setCcyValue('f-dest-ccy', s.destCcy || 'USD');
   document.getElementById('f-dest-cost').value      = s.destCost || '';
   document.getElementById('f-load-date').value      = s.loadDate || '';
   document.getElementById('f-arrive-date').value    = '';
