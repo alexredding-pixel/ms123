@@ -222,6 +222,18 @@ async function logArrivalEvent(mmsi, destination, lat, lng, timestamp) {
     timestamp:    timestamp || new Date().toISOString(),
   });
   console.log('[arrival] ' + mmsi + ' arrived at ' + dest + ' @ ' + (timestamp || 'now'));
+
+  // Fire arrival and delay notifications (async, fire-and-forget)
+  const isFinal = false; // proxy doesn't know final dest — dashboard handles that
+  // We detect isFinal by checking if dest appears in the shipment's dest field
+  getShipmentForMmsi(mmsi).then(s => {
+    if (!s) return;
+    const sd = dest.replace(/[^A-Z0-9]/g,'').slice(0,5);
+    const ud = (s.dest||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+    const fin = ud.split(/\s+/).some(w => w.length >= 4 &&
+      (sd.includes(w.slice(0,5)) || w.slice(0,5).includes(sd)));
+    notifyArrival(mmsi, dest, timestamp ? new Date(timestamp).toLocaleString('en-GB') : 'now', fin);
+  }).catch(() => {});
 }
 
 // Log a departure event — stored as ATD:PORTNAME so the dashboard can stamp
@@ -250,6 +262,10 @@ async function logDepartureEvent(mmsi, destination, timestamp) {
     timestamp:    timestamp || new Date().toISOString(),
   });
   console.log('[departure] ' + mmsi + ' departed ' + dest + ' @ ' + (timestamp || 'now'));
+
+  // Fire departure notification
+  const atdStr = timestamp ? new Date(timestamp).toLocaleString('en-GB') : 'now';
+  notifyDeparture(mmsi, dest, atdStr).catch(() => {});
 }
 
 // ── AIS MESSAGE INSPECTION ────────────────────────────────────────────────────
@@ -319,7 +335,11 @@ async function inspectMessage(raw) {
       if (!destChanged && !etaChanged) return;
 
       lastDest[mmsi] = dest;
-      if (etaStr) lastDest[mmsi + '_eta'] = etaStr;
+      if (etaStr) {
+        lastDest[mmsi + '_eta'] = etaStr;
+        // Check for significant ETA drift and notify if threshold exceeded
+        checkEtaDrift(mmsi, dest, etaStr).catch(() => {});
+      }
 
       await logEvent({
         mmsi, destination: dest, eta: etaStr,
@@ -427,6 +447,42 @@ const httpServer = http.createServer((req, res) => {
   if (PROXY_SECRET && !exemptPaths.includes(req.url) && !safeEqual(req.headers['x-proxy-secret'], PROXY_SECRET)) {
     res.writeHead(401, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Unauthorized' }));
+    return;
+  }
+
+  // GET /notify-prefs — return current notification preferences
+  if (req.method === 'GET' && req.url === '/notify-prefs') {
+    loadNotifPrefs().then(prefs => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(prefs));
+    }).catch(() => { res.writeHead(500); res.end('{}'); });
+    return;
+  }
+
+  // POST /notify-prefs — save notification preferences
+  if (req.method === 'POST' && req.url === '/notify-prefs') {
+    let body = '';
+    req.on('data', c => { body += c; if (body.length > 4096) req.destroy(); });
+    req.on('end', async () => {
+      try {
+        const p = JSON.parse(body);
+        // Upsert into notification_prefs — single row keyed by id='default'
+        await supabase('POST', 'notification_prefs', {
+          id:                         'default',
+          notify_eta_change:          !!p.notify_eta_change,
+          notify_arrival:             !!p.notify_arrival,
+          notify_departure:           !!p.notify_departure,
+          notify_delay:               !!p.notify_delay,
+          notify_14day:               !!p.notify_14day,
+          eta_change_threshold_days:  parseInt(p.eta_change_threshold_days) || 1,
+        }, 'on_conflict=id');
+        notifPrefs = null; // bust cache
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+      } catch(e) {
+        res.writeHead(400); res.end(JSON.stringify({ error: 'Bad JSON' }));
+      }
+    });
     return;
   }
 
@@ -758,6 +814,8 @@ httpServer.listen(PROXY_PORT, async () => {
   console.log('    SUPABASE_SERVICE_KEY: ' + (process.env.SUPABASE_SERVICE_KEY ? 'SET' : 'NOT SET'));
   console.log('    PROXY_SECRET:         ' + (process.env.PROXY_SECRET         ? 'SET' : 'NOT SET'));
   console.log('    ANTHROPIC_API_KEY:    ' + (process.env.ANTHROPIC_API_KEY    ? 'SET' : 'NOT SET'));
+  console.log('    RESEND_API_KEY:       ' + (process.env.RESEND_API_KEY       ? 'SET' : 'NOT SET'));
+  console.log('    NOTIFY_EMAIL:         ' + (process.env.NOTIFY_EMAIL         ? process.env.NOTIFY_EMAIL : 'NOT SET'));
   console.log('');
 
   // Always try to load MMSIs from Supabase on startup
@@ -786,4 +844,348 @@ setInterval(async () => {
     clearTimeout(reconnectTimer);
     if (apiKey) setTimeout(connectToAIS, 1000);
   }
+
+  // Check 14-day proximity alerts against all active shipments
+  try {
+    const res = await supabase('GET', 'shipments', null, 'select=id,data');
+    if (res.ok && Array.isArray(res.data)) {
+      await check14DayAlerts(res.data);
+    }
+  } catch(e) { console.error('[14day] check error:', e.message); }
 }, 5 * 60 * 1000);
+
+// ── NOTIFICATION SYSTEM ───────────────────────────────────────────────────────
+// Sends email via Resend API when tracked events occur.
+// Preferences are loaded from Supabase notification_prefs table.
+// Dedup via notifications_sent table — prevents repeat alerts within a window.
+
+const RESEND_API_KEY  = process.env.RESEND_API_KEY  || '';
+const NOTIFY_EMAIL    = process.env.NOTIFY_EMAIL    || '';
+const NOTIFY_FROM     = process.env.NOTIFY_FROM     || 'Maritime Sentinel <onboarding@resend.dev>';
+
+// In-memory prefs cache — refreshed every 10 minutes
+let notifPrefs = null;
+let notifPrefsLoadedAt = 0;
+
+async function loadNotifPrefs() {
+  // Return cached prefs if fresh
+  if (notifPrefs && Date.now() - notifPrefsLoadedAt < 600000) return notifPrefs;
+  try {
+    const res = await supabase('GET', 'notification_prefs', null, 'limit=1');
+    if (res.ok && res.data && res.data.length > 0) {
+      notifPrefs = res.data[0];
+      notifPrefsLoadedAt = Date.now();
+      return notifPrefs;
+    }
+  } catch(e) {}
+  // Defaults if table is empty or missing
+  return {
+    notify_eta_change:  true,
+    notify_arrival:     true,
+    notify_departure:   true,
+    notify_delay:       true,
+    notify_14day:       true,
+    eta_change_threshold_days: 1,
+  };
+}
+
+// Returns true if this event was already notified within windowHours
+async function alreadyNotified(shipmentId, eventType, windowHours = 24) {
+  const since = new Date(Date.now() - windowHours * 3600000).toISOString();
+  try {
+    const res = await supabase('GET', 'notifications_sent', null,
+      'shipment_id=eq.' + encodeURIComponent(shipmentId) +
+      '&event_type=eq.' + encodeURIComponent(eventType) +
+      '&sent_at=gte.' + since +
+      '&limit=1'
+    );
+    return res.ok && res.data && res.data.length > 0;
+  } catch(e) { return false; }
+}
+
+async function markNotified(shipmentId, mmsi, eventType) {
+  try {
+    await supabase('POST', 'notifications_sent', {
+      shipment_id: shipmentId,
+      mmsi:        String(mmsi),
+      event_type:  eventType,
+      sent_at:     new Date().toISOString(),
+    });
+  } catch(e) {}
+}
+
+// Core send function — calls Resend REST API directly (no SDK needed)
+async function sendEmail(subject, html) {
+  if (!RESEND_API_KEY || !NOTIFY_EMAIL) {
+    console.log('[notify] Skipping email — RESEND_API_KEY or NOTIFY_EMAIL not set');
+    return false;
+  }
+  try {
+    const body = JSON.stringify({ from: NOTIFY_FROM, to: [NOTIFY_EMAIL], subject, html });
+    return new Promise((resolve) => {
+      const req = https.request('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + RESEND_API_KEY,
+          'Content-Type':  'application/json',
+          'Content-Length': Buffer.byteLength(body),
+        },
+      }, (res) => {
+        let d = '';
+        res.on('data', c => d += c);
+        res.on('end', () => {
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            console.log('[notify] Email sent: ' + subject);
+            resolve(true);
+          } else {
+            console.error('[notify] Resend error ' + res.statusCode + ':', d.slice(0, 200));
+            resolve(false);
+          }
+        });
+      });
+      req.on('error', e => { console.error('[notify] Email request error:', e.message); resolve(false); });
+      req.write(body);
+      req.end();
+    });
+  } catch(e) {
+    console.error('[notify] sendEmail error:', e.message);
+    return false;
+  }
+}
+
+// HTML email template — clean, minimal, mobile-friendly
+function emailHtml(title, rows, footnote) {
+  const rowsHtml = rows.map(([label, value]) =>
+    `<tr><td style="padding:8px 0;color:#64748b;font-size:13px;width:140px;vertical-align:top;">${label}</td>` +
+    `<td style="padding:8px 0;color:#0f172a;font-size:13px;font-weight:600;">${value}</td></tr>`
+  ).join('');
+  return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+<div style="max-width:520px;margin:40px auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+  <div style="background:#001736;padding:24px 32px;">
+    <div style="color:#93c5fd;font-size:11px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;margin-bottom:6px;">Maritime Sentinel</div>
+    <div style="color:#ffffff;font-size:20px;font-weight:700;">${title}</div>
+  </div>
+  <div style="padding:28px 32px;">
+    <table style="width:100%;border-collapse:collapse;">${rowsHtml}</table>
+    ${footnote ? `<div style="margin-top:20px;padding-top:16px;border-top:1px solid #e2e8f0;color:#94a3b8;font-size:12px;">${footnote}</div>` : ''}
+  </div>
+  <div style="background:#f8fafc;padding:16px 32px;text-align:center;color:#94a3b8;font-size:11px;">
+    Maritime Sentinel · <a href="https://ms123-production.up.railway.app" style="color:#3b82f6;text-decoration:none;">Open Dashboard</a>
+  </div>
+</div></body></html>`;
+}
+
+// Look up the shipment record for a given MMSI (from Supabase)
+// Returns { id, vessel, origin, dest, arriveDate } or null
+async function getShipmentForMmsi(mmsi) {
+  try {
+    const res = await supabase('GET', 'shipments', null,
+      'select=id,data&order=data->>id.asc'
+    );
+    if (!res.ok || !Array.isArray(res.data)) return null;
+    const row = res.data.find(r => r.data && String(r.data.mmsi) === String(mmsi)
+                                           && !r.data.completedAt);
+    return row ? { id: row.id, ...row.data } : null;
+  } catch(e) { return null; }
+}
+
+// ── NOTIFICATION TRIGGERS ─────────────────────────────────────────────────────
+
+async function notifyArrival(mmsi, portName, ataStr, isFinal) {
+  const prefs = await loadNotifPrefs();
+  if (!prefs.notify_arrival) return;
+  const s = await getShipmentForMmsi(mmsi);
+  if (!s) return;
+  const eventType = isFinal ? 'arrival_final' : 'arrival_' + portName.slice(0,8).toUpperCase();
+  if (await alreadyNotified(s.id, eventType, 12)) return;
+
+  const title  = isFinal ? '🏁 Arrived at Final Destination' : '⚓ Vessel Arrived at Port';
+  const ok = await sendEmail(
+    (isFinal ? '[Final Arrival] ' : '[Port Arrival] ') + s.id + ' — ' + s.vessel,
+    emailHtml(title, [
+      ['Shipment',    s.id],
+      ['Vessel',      s.vessel],
+      ['Route',       s.origin + ' → ' + s.dest],
+      ['Port',        portName],
+      ['Arrived',     ataStr],
+      isFinal ? ['Status', 'Final discharge port reached'] : ['Type', 'Intermediate port stop'],
+    ], isFinal ? 'Your cargo has reached its final destination.' : 'Vessel is stopping at an intermediate port before continuing to ' + s.dest + '.')
+  );
+  if (ok) await markNotified(s.id, mmsi, eventType);
+}
+
+async function notifyDeparture(mmsi, portName, atdStr) {
+  const prefs = await loadNotifPrefs();
+  if (!prefs.notify_departure) return;
+  const s = await getShipmentForMmsi(mmsi);
+  if (!s) return;
+  const eventType = 'departure_' + portName.slice(0,8).toUpperCase();
+  if (await alreadyNotified(s.id, eventType, 12)) return;
+
+  const ok = await sendEmail(
+    '[Departed] ' + s.id + ' — ' + s.vessel + ' left ' + portName,
+    emailHtml('🚢 Vessel Departed', [
+      ['Shipment',   s.id],
+      ['Vessel',     s.vessel],
+      ['Route',      s.origin + ' → ' + s.dest],
+      ['Departed',   portName],
+      ['Time',       atdStr],
+    ], 'Vessel is now underway. Next stop: ' + s.dest + '.')
+  );
+  if (ok) await markNotified(s.id, mmsi, eventType);
+}
+
+async function notifyDelay(mmsi, portName, ataStr, etaStr, delayDays) {
+  const prefs = await loadNotifPrefs();
+  if (!prefs.notify_delay) return;
+  if (!delayDays || delayDays <= 0) return;
+  const s = await getShipmentForMmsi(mmsi);
+  if (!s) return;
+  const eventType = 'delay_' + portName.slice(0,8).toUpperCase();
+  if (await alreadyNotified(s.id, eventType, 24)) return;
+
+  const ok = await sendEmail(
+    '[Delay] ' + s.id + ' — ' + s.vessel + ' arrived ' + delayDays + 'd late at ' + portName,
+    emailHtml('⚠️ Arrival Delay Detected', [
+      ['Shipment',    s.id],
+      ['Vessel',      s.vessel],
+      ['Port',        portName],
+      ['ETA was',     etaStr || '—'],
+      ['Arrived',     ataStr],
+      ['Delay',       '+' + delayDays + ' day' + (delayDays !== 1 ? 's' : '')],
+    ], 'This delay may affect your final ETA to ' + s.dest + '. Check the dashboard for an updated estimate.')
+  );
+  if (ok) await markNotified(s.id, mmsi, eventType);
+}
+
+async function notifyEtaChange(mmsi, dest, prevEtaStr, newEtaStr, driftDays) {
+  const prefs = await loadNotifPrefs();
+  if (!prefs.notify_eta_change) return;
+  const threshold = prefs.eta_change_threshold_days || 1;
+  if (Math.abs(driftDays) < threshold) return;
+  const s = await getShipmentForMmsi(mmsi);
+  if (!s) return;
+  // Dedup window: 6h — ETA can wobble repeatedly in a short period
+  const eventType = 'eta_change_' + dest.slice(0,6);
+  if (await alreadyNotified(s.id, eventType, 6)) return;
+
+  const later   = driftDays > 0;
+  const driftStr = (later ? '+' : '') + driftDays + ' day' + (Math.abs(driftDays) !== 1 ? 's' : '');
+  const ok = await sendEmail(
+    '[ETA Change] ' + s.id + ' — ' + s.vessel + ' ' + (later ? 'delayed' : 'ahead') + ' ' + driftStr,
+    emailHtml(later ? '📅 ETA Pushed Back' : '📅 ETA Moved Forward', [
+      ['Shipment',   s.id],
+      ['Vessel',     s.vessel],
+      ['Port',       dest],
+      ['Previous ETA', prevEtaStr || '—'],
+      ['New ETA',    newEtaStr],
+      ['Change',     driftStr],
+    ], later
+      ? 'The vessel is running behind schedule. Your final ETA to ' + s.dest + ' may be affected.'
+      : 'The vessel is running ahead of schedule.')
+  );
+  if (ok) await markNotified(s.id, mmsi, eventType);
+}
+
+async function notifyApproaching14Days(mmsi, s, etaDate) {
+  const prefs = await loadNotifPrefs();
+  if (!prefs.notify_14day) return;
+  // Dedup: once per shipment per voyage (48h window is generous — re-check tomorrow)
+  if (await alreadyNotified(s.id, '14day_warning', 48)) return;
+
+  const daysAway = Math.round((etaDate - Date.now()) / 86400000);
+  const ok = await sendEmail(
+    '[14 Days] ' + s.id + ' — ' + s.vessel + ' arrives in ~' + daysAway + ' days',
+    emailHtml('📦 Shipment Arriving Soon', [
+      ['Shipment',     s.id],
+      ['Vessel',       s.vessel],
+      ['Destination',  s.dest],
+      ['ETA',          etaDate.toLocaleDateString('en-GB', {day:'2-digit',month:'short',year:'numeric'})],
+      ['Days away',    '~' + daysAway + ' days'],
+    ], 'Time to prepare for receipt — arrange customs clearance, warehouse space, and delivery logistics.')
+  );
+  if (ok) await markNotified(s.id, mmsi, '14day_warning');
+}
+
+// ── 14-DAY PROXIMITY CHECK (runs on bootstrap interval) ──────────────────────
+async function check14DayAlerts(shipmentRows) {
+  const prefs = await loadNotifPrefs();
+  if (!prefs.notify_14day || !RESEND_API_KEY || !NOTIFY_EMAIL) return;
+
+  const now = Date.now();
+  for (const row of shipmentRows) {
+    const s = row.data;
+    if (!s || s.completedAt || !s.mmsi) continue;
+
+    // Determine best ETA to final destination
+    // Priority: AIS ETA to final port > revisedEta > arriveDate
+    let etaDate = null;
+
+    // Try lastEtaByDest for the final destination key
+    if (s.lastEtaByDest && s.dest) {
+      const destKey = s.dest.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,5);
+      const entry = Object.entries(s.lastEtaByDest || {}).find(([k]) =>
+        k.replace(/[^A-Z0-9]/g,'').slice(0,5) === destKey
+      );
+      if (entry) {
+        const d = new Date(entry[1].replace('ETA: ',''));
+        if (!isNaN(d)) etaDate = d;
+      }
+    }
+    // Fall back to revisedEta or arriveDate
+    if (!etaDate && s.revisedEta) {
+      const d = new Date(s.revisedEta.replace(/(\d{2}) (\w{3}) (\d{4})/, '$2 $1 $3'));
+      if (!isNaN(d)) etaDate = d;
+    }
+    if (!etaDate && s.arriveDate) {
+      const d = new Date(s.arriveDate);
+      if (!isNaN(d)) etaDate = d;
+    }
+    if (!etaDate) continue;
+
+    const daysAway = (etaDate - now) / 86400000;
+    // Trigger if between 13.5 and 14.5 days away (±12h window around the 14-day mark)
+    if (daysAway >= 13.5 && daysAway <= 14.5) {
+      await notifyApproaching14Days(s.mmsi, s, etaDate);
+    }
+  }
+}
+
+// ── ETA DRIFT TRACKING ────────────────────────────────────────────────────────
+// Track first ETA seen per mmsi+dest to detect significant drift.
+// Stored in memory (resets on redeploy — acceptable, drift builds up over days).
+const firstEtaSeen = {}; // key: mmsi+'_'+dest → ISO string
+
+async function checkEtaDrift(mmsi, dest, newEtaStr) {
+  const key = mmsi + '_' + dest;
+  if (!firstEtaSeen[key]) {
+    firstEtaSeen[key] = newEtaStr;
+    return; // First time seeing ETA for this dest — establish baseline
+  }
+  const prev = firstEtaSeen[key];
+  if (prev === newEtaStr) return; // No change
+
+  // Parse both dates
+  const parseEta = str => {
+    if (!str) return null;
+    // Handles "YYYY-MM-DD HH:MM UTC" and "ETA: MM/DD HH:MM UTC"
+    const iso = str.replace('ETA: ','').replace(' UTC','').trim();
+    const mmdd = iso.match(/^(\d{2})\/(\d{2})\s+(\d{2}):(\d{2})$/);
+    if (mmdd) {
+      const yr = new Date().getFullYear();
+      return new Date(yr + '-' + mmdd[1] + '-' + mmdd[2] + 'T' + mmdd[3] + ':' + mmdd[4] + ':00Z');
+    }
+    return new Date(iso);
+  };
+
+  const prevDate = parseEta(prev);
+  const newDate  = parseEta(newEtaStr);
+  if (!prevDate || !newDate || isNaN(prevDate) || isNaN(newDate)) return;
+
+  const driftDays = Math.round((newDate - prevDate) / 86400000);
+  if (driftDays === 0) return;
+
+  // Update baseline to new ETA so we don't re-alert on the same drift
+  firstEtaSeen[key] = newEtaStr;
+  await notifyEtaChange(mmsi, dest, prev, newEtaStr, driftDays);
+}

@@ -1012,6 +1012,25 @@ tr.selected .row-chevron { background: var(--primary-fixed); color: var(--primar
   background: var(--primary); color: white; border-color: var(--primary);
 }
 
+/* ── NOTIFICATION TOGGLES ────────────────── */
+.notif-toggle {
+  position: relative; display: inline-block;
+  width: 44px; height: 24px; flex-shrink: 0;
+}
+.notif-toggle input { opacity: 0; width: 0; height: 0; }
+.notif-slider {
+  position: absolute; cursor: pointer;
+  inset: 0; background: var(--outline-variant);
+  border-radius: 24px; transition: 0.2s;
+}
+.notif-slider::before {
+  content: ''; position: absolute;
+  height: 18px; width: 18px; left: 3px; bottom: 3px;
+  background: white; border-radius: 50%; transition: 0.2s;
+}
+.notif-toggle input:checked + .notif-slider { background: var(--primary); }
+.notif-toggle input:checked + .notif-slider::before { transform: translateX(20px); }
+
 /* ── MODAL TABS ──────────────────────────── */
 .modal-tabs {
   display: flex; gap: 4px;
@@ -1681,6 +1700,72 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
           <button class="perpage-btn" data-val="5" onclick="setPerPage(5)">5</button>
           <button class="perpage-btn" data-val="10" onclick="setPerPage(10)">10</button>
           <button class="perpage-btn active-perpage" data-val="20" onclick="setPerPage(20)">20</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Notifications -->
+    <div style="background:var(--surface-container-low);border-radius:16px;padding:24px;margin-bottom:16px;">
+      <div style="font-size:0.625rem;font-weight:800;letter-spacing:0.16em;text-transform:uppercase;color:var(--on-surface-variant);margin-bottom:4px;">Notifications</div>
+      <div style="font-size:0.8125rem;color:var(--on-surface-variant);margin-bottom:20px;">Email alerts sent to your configured <code style="background:var(--surface-container-high);padding:1px 5px;border-radius:4px;font-size:0.75rem;">NOTIFY_EMAIL</code> address. Requires <code style="background:var(--surface-container-high);padding:1px 5px;border-radius:4px;font-size:0.75rem;">RESEND_API_KEY</code> on Railway.</div>
+
+      <div id="notifLoading" style="font-size:0.8125rem;color:var(--on-surface-variant);">Loading preferences…</div>
+      <div id="notifPrefsForm" style="display:none;display:flex;flex-direction:column;gap:0;">
+
+        <!-- Toggle row helper — repeated for each notif type -->
+        <div class="notif-row" style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--surface-container-highest);">
+          <div>
+            <div style="font-size:0.9375rem;font-weight:700;color:var(--on-surface);">ETA changed</div>
+            <div style="font-size:0.8125rem;color:var(--on-surface-variant);margin-top:2px;">When AIS ETA to your final port shifts by the threshold below</div>
+          </div>
+          <label class="notif-toggle"><input type="checkbox" id="pref_eta_change"><span class="notif-slider"></span></label>
+        </div>
+
+        <!-- ETA threshold — shown indented under ETA changed -->
+        <div id="etaThresholdRow" style="padding:10px 0 12px 16px;border-bottom:1px solid var(--surface-container-highest);display:flex;align-items:center;justify-content:space-between;">
+          <div style="font-size:0.8125rem;color:var(--on-surface-variant);">Minimum change to trigger alert</div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <input id="pref_eta_threshold" type="number" min="1" max="14" value="1"
+              style="width:52px;text-align:center;background:var(--surface-container-high);border:1.5px solid var(--outline-variant);border-radius:8px;padding:6px 8px;font-size:0.875rem;font-weight:700;color:var(--on-surface);font-family:inherit;">
+            <span style="font-size:0.8125rem;color:var(--on-surface-variant);">day(s)</span>
+          </div>
+        </div>
+
+        <div class="notif-row" style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--surface-container-highest);">
+          <div>
+            <div style="font-size:0.9375rem;font-weight:700;color:var(--on-surface);">Vessel arrives at port</div>
+            <div style="font-size:0.8125rem;color:var(--on-surface-variant);margin-top:2px;">Any port stop, including intermediate ports and final destination</div>
+          </div>
+          <label class="notif-toggle"><input type="checkbox" id="pref_arrival"><span class="notif-slider"></span></label>
+        </div>
+
+        <div class="notif-row" style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--surface-container-highest);">
+          <div>
+            <div style="font-size:0.9375rem;font-weight:700;color:var(--on-surface);">Vessel leaves a port</div>
+            <div style="font-size:0.8125rem;color:var(--on-surface-variant);margin-top:2px;">When the vessel departs and resumes transit</div>
+          </div>
+          <label class="notif-toggle"><input type="checkbox" id="pref_departure"><span class="notif-slider"></span></label>
+        </div>
+
+        <div class="notif-row" style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--surface-container-highest);">
+          <div>
+            <div style="font-size:0.9375rem;font-weight:700;color:var(--on-surface);">Delay at arrival</div>
+            <div style="font-size:0.8125rem;color:var(--on-surface-variant);margin-top:2px;">When ATA is later than the predicted ETA for a port</div>
+          </div>
+          <label class="notif-toggle"><input type="checkbox" id="pref_delay"><span class="notif-slider"></span></label>
+        </div>
+
+        <div class="notif-row" style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;">
+          <div>
+            <div style="font-size:0.9375rem;font-weight:700;color:var(--on-surface);">14 days from final destination</div>
+            <div style="font-size:0.8125rem;color:var(--on-surface-variant);margin-top:2px;">Advance notice based on best available ETA — time to arrange customs & delivery</div>
+          </div>
+          <label class="notif-toggle"><input type="checkbox" id="pref_14day"><span class="notif-slider"></span></label>
+        </div>
+
+        <div style="margin-top:16px;display:flex;align-items:center;gap:12px;">
+          <button onclick="saveNotifPrefs()" style="background:var(--primary);color:white;border:none;border-radius:10px;padding:10px 20px;font-size:0.875rem;font-weight:700;font-family:inherit;cursor:pointer;">Save preferences</button>
+          <span id="notifSaveStatus" style="font-size:0.8125rem;color:var(--on-surface-variant);"></span>
         </div>
       </div>
     </div>
@@ -4328,6 +4413,72 @@ function syncSettingsUI() {
   document.querySelectorAll('.perpage-btn').forEach(btn => {
     btn.classList.toggle('active-perpage', parseInt(btn.dataset.val) === shipmentsPerPage);
   });
+  // Load notification prefs
+  loadNotifPrefsUI();
+}
+
+// -- NOTIFICATION PREFERENCES -------------------------------------------------
+async function loadNotifPrefsUI() {
+  const loading = document.getElementById('notifLoading');
+  const form    = document.getElementById('notifPrefsForm');
+  if (!loading || !form) return;
+  loading.style.display = 'block';
+  form.style.display    = 'none';
+  try {
+    const res = await fetch(PROXY_BASE + '/notify-prefs', {
+      headers: { 'x-proxy-secret': getProxySecret() }
+    });
+    const prefs = res.ok ? await res.json() : {};
+    // Populate toggles
+    const set = (id, val) => {
+      const el = document.getElementById(id);
+      if (el) el.checked = !!val;
+    };
+    set('pref_eta_change', prefs.notify_eta_change  !== false);
+    set('pref_arrival',    prefs.notify_arrival     !== false);
+    set('pref_departure',  prefs.notify_departure   !== false);
+    set('pref_delay',      prefs.notify_delay       !== false);
+    set('pref_14day',      prefs.notify_14day       !== false);
+    const thresh = document.getElementById('pref_eta_threshold');
+    if (thresh) thresh.value = prefs.eta_change_threshold_days || 1;
+
+    loading.style.display = 'none';
+    form.style.display    = 'flex';
+  } catch(e) {
+    loading.textContent = 'Could not load preferences — check proxy connection.';
+  }
+}
+
+async function saveNotifPrefs() {
+  const get = id => {
+    const el = document.getElementById(id);
+    return el ? el.checked : false;
+  };
+  const thresh = parseInt(document.getElementById('pref_eta_threshold')?.value) || 1;
+  const prefs = {
+    notify_eta_change:         get('pref_eta_change'),
+    notify_arrival:            get('pref_arrival'),
+    notify_departure:          get('pref_departure'),
+    notify_delay:              get('pref_delay'),
+    notify_14day:              get('pref_14day'),
+    eta_change_threshold_days: thresh,
+  };
+  const status = document.getElementById('notifSaveStatus');
+  if (status) status.textContent = 'Saving…';
+  try {
+    const res = await fetch(PROXY_BASE + '/notify-prefs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-proxy-secret': getProxySecret() },
+      body: JSON.stringify(prefs),
+    });
+    if (status) {
+      status.textContent = res.ok ? '✓ Saved' : 'Error saving';
+      status.style.color = res.ok ? 'var(--on-tertiary-fixed-variant)' : 'var(--error)';
+      setTimeout(() => { if (status) status.textContent = ''; }, 3000);
+    }
+  } catch(e) {
+    if (status) { status.textContent = 'Connection error'; status.style.color = 'var(--error)'; }
+  }
 }
 
 // -- LOG SCREEN ---------------------------------------------------------------
