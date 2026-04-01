@@ -1203,6 +1203,26 @@ tr.selected .row-chevron { background: var(--primary-fixed); color: var(--primar
   height: 1px; background: var(--surface-container-high); margin: 20px 0;
 }
 
+/* ── PORT SUGGESTION BOX ─────────────────────── */
+.port-suggest-box {
+  display: none; position: absolute; z-index: 300;
+  left: 0; right: 0; top: calc(100% + 4px);
+  background: var(--surface-container-lowest);
+  border: 1px solid var(--outline-variant);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0,23,54,0.12);
+  overflow: hidden; max-height: 200px; overflow-y: auto;
+}
+.port-suggest-box.open { display: block; }
+.port-suggest-item {
+  padding: 10px 16px; cursor: pointer; font-size: 0.875rem;
+  color: var(--on-surface); border-bottom: 1px solid var(--surface-container-high);
+  transition: background 0.1s;
+}
+.port-suggest-item:last-child { border-bottom: none; }
+.port-suggest-item:hover { background: var(--surface-container-low); }
+.port-suggest-item strong { color: var(--primary); font-weight: 700; }
+
 /* ── CURRENCY TOGGLE BUTTONS ─────────────────── */
 .ccy-toggle {
   display: flex; gap: 4px;
@@ -1925,16 +1945,27 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
       <!-- Cargo section -->
       <div class="form-section">
         <div class="form-section-title">Your Cargo</div>
-        <div class="form-row single">
-          <div class="form-group">
-            <label>Your Reference Number</label>
-            <input type="text" id="f-ref" placeholder="e.g. PO-2024-88821"/>
-          </div>
-        </div>
         <div class="form-row">
           <div class="form-group">
+            <label>Container Ref</label>
+            <input type="text" id="f-container" placeholder="e.g. MSCU1234567" style="font-family:'DM Mono',monospace;font-size:0.8125rem;"/>
+          </div>
+          <div class="form-group">
+            <label>Order / PO Number</label>
+            <input type="text" id="f-order" placeholder="e.g. PO-2024-88821"/>
+          </div>
+        </div>
+        <!-- Hidden combined ref used as shipment ID -->
+        <input type="hidden" id="f-ref"/>
+        <div class="form-row">
+          <div class="form-group" style="position:relative;">
             <label>Loading Port (where your goods board)</label>
-            <input type="text" id="f-origin" placeholder="e.g. Mersin, TR"/>
+            <input type="text" id="f-origin" placeholder="e.g. Mersin, TR"
+              autocomplete="off" autocorrect="off" spellcheck="false"
+              oninput="filterPortSuggestions('f-origin','portOriginBox',this.value)"
+              onfocus="filterPortSuggestions('f-origin','portOriginBox',this.value)"
+              onblur="setTimeout(()=>hidePortBox('portOriginBox'),150)"/>
+            <div id="portOriginBox" class="port-suggest-box"></div>
           </div>
           <div class="form-group">
             <label>Expected Loading Date</label>
@@ -1942,9 +1973,14 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
           </div>
         </div>
         <div class="form-row">
-          <div class="form-group">
+          <div class="form-group" style="position:relative;">
             <label>Discharge Port (where your goods leave)</label>
-            <input type="text" id="f-dest" placeholder="e.g. Felixstowe, UK"/>
+            <input type="text" id="f-dest" placeholder="e.g. Felixstowe, UK"
+              autocomplete="off" autocorrect="off" spellcheck="false"
+              oninput="filterPortSuggestions('f-dest','portDestBox',this.value)"
+              onfocus="filterPortSuggestions('f-dest','portDestBox',this.value)"
+              onblur="setTimeout(()=>hidePortBox('portDestBox'),150)"/>
+            <div id="portDestBox" class="port-suggest-box"></div>
           </div>
           <div class="form-group">
             <label>Expected Arrival Date</label>
@@ -1955,14 +1991,12 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
         <div class="form-row">
           <div class="form-group">
             <label>Container Type</label>
-            <input type="text" id="f-cargo" list="cargoList" placeholder="e.g. 40', 20', LCL" autocomplete="off"/>
-            <datalist id="cargoList">
-              <option value="40'">
-              <option value="20'">
-              <option value="LCL">
-              <option value="40' HC">
-              <option value="Bulk">
-            </datalist>
+            <div class="ccy-toggle" id="f-cargo-wrap">
+              <button type="button" class="ccy-btn active" data-val="40'" onclick="setCargoType(this)">40'</button>
+              <button type="button" class="ccy-btn" data-val="20'" onclick="setCargoType(this)">20'</button>
+              <button type="button" class="ccy-btn" data-val="LCL" onclick="setCargoType(this)">LCL</button>
+            </div>
+            <input type="hidden" id="f-cargo" value="40'"/>
           </div>
           <div class="form-group">
             <label>Carrier</label>
@@ -3661,16 +3695,24 @@ function openAddModal() {
   clearBlFile();
   pendingModalDocs = {};
   renderModalDocs(null);
-  // Auto-generate a reference number
-  const ref = 'MS-' + Math.floor(10000 + Math.random() * 90000) + '-' +
-    String.fromCharCode(65 + Math.floor(Math.random() * 26)) +
-    String.fromCharCode(65 + Math.floor(Math.random() * 26));
-  document.getElementById('f-ref').value = ref;
+  // Clear new reference fields (no auto-generated ref — user enters their own)
+  const cEl = document.getElementById('f-container');
+  const oEl = document.getElementById('f-order');
+  if (cEl) cEl.value = '';
+  if (oEl) oEl.value = '';
+  document.getElementById('f-ref').value = '';
   document.getElementById('f-vessel-name').value = '';
   document.getElementById('f-mmsi').value = '';
   document.getElementById('f-origin').value = '';
   document.getElementById('f-dest').value = '';
-  document.getElementById('f-cargo').value = '';
+  hidePortBox('portOriginBox');
+  hidePortBox('portDestBox');
+  // Reset cargo toggle to 40'
+  document.getElementById('f-cargo').value = "40'";
+  const cargoWrap = document.getElementById('f-cargo-wrap');
+  if (cargoWrap) cargoWrap.querySelectorAll('.ccy-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.val === "40'");
+  });
   document.getElementById('f-incoterms').value = '';
   handleIncotermsChange('');
   document.getElementById('f-weight').value = '';
@@ -3760,13 +3802,19 @@ function submitAddShipment() {
   }
 
   // ── ADD MODE ──────────────────────────────────────────────────────────────
-  const id         = document.getElementById('f-ref').value.trim();
+  const id         = composeShipmentId();
   const arriveDate = document.getElementById('f-arrive-date').value;
 
   if (!id || !vessel || !mmsi || !origin || !dest) {
-    ['f-ref','f-vessel-name','f-mmsi','f-origin','f-dest'].forEach(fid => {
+    if (!id) {
+      ['f-container','f-order'].forEach(fid => {
+        const el = document.getElementById(fid);
+        if (el && !el.value.trim()) el.style.boxShadow = '0 0 0 2px var(--error)';
+      });
+    }
+    ['f-vessel-name','f-mmsi','f-origin','f-dest'].forEach(fid => {
       const el = document.getElementById(fid);
-      if (!el.value.trim()) el.style.boxShadow = '0 0 0 2px var(--error)';
+      if (el && !el.value.trim()) el.style.boxShadow = '0 0 0 2px var(--error)';
     });
     return;
   }
@@ -4169,6 +4217,80 @@ function confirmRemove() {
 
   closeDetail();
   renderTable();
+}
+
+// -- PORT AUTOCOMPLETE --------------------------------------------------------
+// Edit this list to add your commonly used ports. Free text entry still works.
+const PORT_LIST = [
+  'Felixstowe, UK', 'Southampton, UK', 'London Gateway, UK', 'Liverpool, UK',
+  'Hamburg, DE', 'Rotterdam, NL', 'Antwerp, BE', 'Bremerhaven, DE',
+  'Le Havre, FR', 'Barcelona, ES', 'Valencia, ES', 'Algeciras, ES',
+  'Mersin, TR', 'Istanbul, TR', 'Izmir, TR',
+  'Piraeus, GR', 'Genoa, IT', 'Naples, IT', 'Venice, IT',
+  'Shanghai, CN', 'Ningbo, CN', 'Shenzhen, CN', 'Guangzhou, CN',
+  'Qingdao, CN', 'Tianjin, CN', 'Hong Kong, HK',
+  'Singapore, SG', 'Port Klang, MY', 'Tanjung Pelepas, MY',
+  'Nhava Sheva, IN', 'Mundra, IN', 'Chennai, IN', 'Kolkata, IN',
+  'Colombo, LK', 'Dubai, AE', 'Jebel Ali, AE', 'Salalah, OM',
+  'New York, US', 'Los Angeles, US', 'Long Beach, US', 'Houston, US',
+  'Savannah, US', 'Charleston, US', 'Norfolk, US', 'Boston, US',
+  'Santos, BR', 'Buenos Aires, AR',
+  'Durban, ZA', 'Cape Town, ZA', 'Mombasa, KE',
+  'Sydney, AU', 'Melbourne, AU', 'Brisbane, AU',
+  'Busan, KR', 'Tokyo, JP', 'Yokohama, JP', 'Osaka, JP',
+];
+
+function filterPortSuggestions(inputId, boxId, query) {
+  const box = document.getElementById(boxId);
+  if (!box) return;
+  const q = query.trim().toLowerCase();
+  const matches = q.length === 0
+    ? PORT_LIST.slice(0, 8)  // show first 8 on empty focus
+    : PORT_LIST.filter(p => p.toLowerCase().includes(q)).slice(0, 10);
+
+  if (matches.length === 0) { box.classList.remove('open'); return; }
+
+  box.innerHTML = matches.map(p => {
+    // Bold the matching portion
+    const idx = p.toLowerCase().indexOf(q);
+    const hi  = q.length > 0 && idx >= 0
+      ? p.slice(0, idx) + '<strong>' + p.slice(idx, idx + q.length) + '</strong>' + p.slice(idx + q.length)
+      : p;
+    return '<div class="port-suggest-item" onmousedown="selectPort(\'' + inputId + '\',\'' + boxId + '\',\'' + p.replace(/'/g,"\\'") + '\')">' + hi + '</div>';
+  }).join('');
+  box.classList.add('open');
+}
+
+function selectPort(inputId, boxId, value) {
+  const inp = document.getElementById(inputId);
+  if (inp) { inp.value = value; inp.style.boxShadow = ''; }
+  hidePortBox(boxId);
+}
+
+function hidePortBox(boxId) {
+  const box = document.getElementById(boxId);
+  if (box) box.classList.remove('open');
+}
+
+// -- CONTAINER TYPE TOGGLE ----------------------------------------------------
+function setCargoType(btn) {
+  const wrap = document.getElementById('f-cargo-wrap');
+  if (wrap) wrap.querySelectorAll('.ccy-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const hidden = document.getElementById('f-cargo');
+  if (hidden) hidden.value = btn.dataset.val;
+}
+
+// -- SHIPMENT ID COMPOSITION --------------------------------------------------
+// Combines container ref + order number into the shipment ID.
+// Format: "MSCU1234567 / PO-2024-88821", or just whichever is provided.
+function composeShipmentId() {
+  const container = (document.getElementById('f-container')?.value || '').trim();
+  const order     = (document.getElementById('f-order')?.value || '').trim();
+  const id = [container, order].filter(Boolean).join(' / ');
+  const hidden = document.getElementById('f-ref');
+  if (hidden) hidden.value = id;
+  return id;
 }
 
 // -- VESSEL NAME SEARCH -------------------------------------------------------
@@ -5673,20 +5795,35 @@ function fillFormFromBL(p, file) {
     }
   }
   if (p.mmsi) document.getElementById('f-mmsi').value = p.mmsi;
-  if (p.bl_number)      document.getElementById('f-ref').value           = p.bl_number;
+  if (p.bl_number) {
+    // Put the B/L number into the Order field and compose the shipment ID
+    const oEl = document.getElementById('f-order');
+    if (oEl) oEl.value = p.bl_number;
+    composeShipmentId();
+  }
   if (p.origin)         document.getElementById('f-origin').value        = p.origin;
   if (p.dest)           document.getElementById('f-dest').value          = p.dest;
   if (p.load_date)      document.getElementById('f-load-date').value     = p.load_date;
   if (p.eta_date)       document.getElementById('f-arrive-date').value   = p.eta_date;
-  if (p.container_type) document.getElementById('f-cargo').value         = p.container_type;
+  if (p.container_type) {
+    // Try to match against the 3 toggle options; fall back to setting hidden only
+    const cargoPref = ["40'","20'","LCL"].find(v =>
+      p.container_type.toLowerCase().includes(v.toLowerCase().replace("'",""))
+    ) || p.container_type;
+    document.getElementById('f-cargo').value = cargoPref;
+    const cargoWrap = document.getElementById('f-cargo-wrap');
+    if (cargoWrap) cargoWrap.querySelectorAll('.ccy-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.val === cargoPref);
+    });
+  }
   if (p.carrier)        document.getElementById('f-carrier').value       = p.carrier;
   if (p.weight_kg)      document.getElementById('f-weight').value        = p.weight_kg;
   if (p.pallets)        document.getElementById('f-pallets').value       = p.pallets;
   if (p.incoterms)      { document.getElementById('f-incoterms').value = p.incoterms; handleIncotermsChange(p.incoterms); }
 
   // Highlight pre-filled fields so user knows what was auto-filled
-  ['f-vessel-name','f-mmsi','f-ref','f-origin','f-dest','f-load-date',
-   'f-arrive-date','f-cargo','f-carrier','f-weight','f-pallets','f-incoterms']
+  ['f-vessel-name','f-mmsi','f-container','f-order','f-origin','f-dest','f-load-date',
+   'f-arrive-date','f-carrier','f-weight','f-pallets','f-incoterms']
     .forEach(id => {
       const el = document.getElementById(id);
       if (el && el.value) {
@@ -5847,16 +5984,26 @@ function openEditModal(idx) {
   document.getElementById('entryAuto').style.display = 'none';
   pendingModalDocs = {};
   renderModalDocs(s.id);
-  document.getElementById('f-ref').value            = s.id;
-  document.getElementById('f-ref').readOnly         = true;
-  document.getElementById('f-ref').style.opacity    = '0.5';
+  // Populate the hidden ref and split back into container/order if possible
+  document.getElementById('f-ref').value = s.id;
+  const idParts = (s.id || '').split(' / ');
+  const cEl = document.getElementById('f-container');
+  const oEl = document.getElementById('f-order');
+  if (cEl) cEl.value = idParts.length > 1 ? idParts[0] : '';
+  if (oEl) oEl.value = idParts.length > 1 ? idParts[1] : (idParts[0] || '');
   document.getElementById('f-vessel-name').value    = s.vessel;
   document.getElementById('f-mmsi').value           = s.mmsi;
   document.getElementById('f-origin').value         = s.origin;
   document.getElementById('f-dest').value           = s.dest;
   document.getElementById('f-incoterms').value      = s.incoterms || '';
   handleIncotermsChange(s.incoterms || '');
-  document.getElementById('f-cargo').value          = s.cargo || '';
+  // Cargo toggle
+  const cargoPref = s.cargo || "40'";
+  document.getElementById('f-cargo').value = cargoPref;
+  const cargoWrap = document.getElementById('f-cargo-wrap');
+  if (cargoWrap) cargoWrap.querySelectorAll('.ccy-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.val === cargoPref);
+  });
   document.getElementById('f-carrier').value        = s.carrier || '';
   document.getElementById('f-weight').value         = s.weight || '';
   document.getElementById('f-pallets').value        = s.pallets || '';
@@ -5882,8 +6029,6 @@ function closeEditMode() {
   document.querySelector('.add-modal-header h2').textContent = 'New Shipment Booking';
   document.querySelector('.add-modal-header p').textContent = 'Your cargo details — linked to a tracked vessel via MMSI';
   document.getElementById('submitAddShipment').textContent = 'Add Shipment';
-  document.getElementById('f-ref').readOnly         = false;
-  document.getElementById('f-ref').style.opacity    = '1';
   document.getElementById('f-arrive-date').disabled = false;
   document.getElementById('f-arrive-date').style.opacity = '1';
 }
@@ -6021,12 +6166,16 @@ window.addEventListener('load', async () => {
   document.getElementById('cancelAddModal').addEventListener('click', closeAddModal);
   document.getElementById('submitAddShipment').addEventListener('click', submitAddShipment);
 
-  // Vessel lookup on name/MMSI input
   // Clear error highlight on input focus
-  ['f-ref','f-vessel-name','f-mmsi','f-origin','f-dest'].forEach(fid => {
-    document.getElementById(fid).addEventListener('focus', function() {
-      this.style.boxShadow = '';
-    });
+  ['f-container','f-order','f-vessel-name','f-mmsi','f-origin','f-dest'].forEach(fid => {
+    const el = document.getElementById(fid);
+    if (el) el.addEventListener('focus', function() { this.style.boxShadow = ''; });
+  });
+
+  // Keep hidden f-ref composed whenever container or order changes
+  ['f-container','f-order'].forEach(fid => {
+    const el = document.getElementById(fid);
+    if (el) el.addEventListener('input', composeShipmentId);
   });
 
   // Modal only closes via X button — no backdrop click dismiss
