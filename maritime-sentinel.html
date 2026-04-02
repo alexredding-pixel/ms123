@@ -1211,7 +1211,7 @@ tr.selected .row-chevron { background: var(--primary-fixed); color: var(--primar
   border: 1px solid var(--outline-variant);
   border-radius: 12px;
   box-shadow: 0 8px 24px rgba(0,23,54,0.12);
-  overflow: hidden; max-height: 200px; overflow-y: auto;
+  overflow: hidden; max-height: 200px;
 }
 .port-suggest-box.open { display: block; }
 .port-suggest-item {
@@ -1959,7 +1959,7 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
         <input type="hidden" id="f-ref"/>
         <div class="form-row">
           <div class="form-group" style="position:relative;">
-            <label>Loading Port (where your goods board)</label>
+            <label>Loading Port</label>
             <input type="text" id="f-origin" placeholder="e.g. Mersin, TR"
               autocomplete="off" autocorrect="off" spellcheck="false"
               oninput="filterPortSuggestions('f-origin','portOriginBox',this.value)"
@@ -1974,7 +1974,7 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
         </div>
         <div class="form-row">
           <div class="form-group" style="position:relative;">
-            <label>Discharge Port (where your goods leave)</label>
+            <label>Discharge Port</label>
             <input type="text" id="f-dest" placeholder="e.g. Felixstowe, UK"
               autocomplete="off" autocorrect="off" spellcheck="false"
               oninput="filterPortSuggestions('f-dest','portDestBox',this.value)"
@@ -1998,38 +1998,30 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
             </div>
             <input type="hidden" id="f-cargo" value="40'"/>
           </div>
-          <div class="form-group">
+          <div class="form-group" style="position:relative;">
             <label>Carrier</label>
-            <input type="text" id="f-carrier" list="carrierList" placeholder="e.g. MSC, Maersk" autocomplete="off"/>
-            <datalist id="carrierList">
-              <option value="MSC">
-              <option value="Maersk">
-              <option value="CMA CGM">
-              <option value="COSCO">
-              <option value="Hapag-Lloyd">
-              <option value="Evergreen">
-              <option value="ONE">
-              <option value="HMM">
-              <option value="ZIM">
-            </datalist>
+            <input type="text" id="f-carrier" placeholder="e.g. MSC, Maersk"
+              autocomplete="off" autocorrect="off" spellcheck="false"
+              oninput="filterSuggest('f-carrier','carrierBox',CARRIER_LIST,this.value)"
+              onfocus="filterSuggest('f-carrier','carrierBox',CARRIER_LIST,this.value)"
+              onblur="setTimeout(()=>hidePortBox('carrierBox'),150)"/>
+            <div id="carrierBox" class="port-suggest-box"></div>
           </div>
         </div>
-        <!-- Incoterms -->
-        <div class="form-row single">
-          <div class="form-group">
+        <!-- Incoterms + CBM -->
+        <div class="form-row">
+          <div class="form-group" style="position:relative;">
             <label>Incoterms</label>
-            <input type="text" id="f-incoterms" list="incoList" placeholder="e.g. FOB, DAP, CIF"
-              autocomplete="off" oninput="handleIncotermsChange(this.value)"/>
-            <datalist id="incoList">
-              <option value="EXW">
-              <option value="FCA">
-              <option value="FOB">
-              <option value="CFR">
-              <option value="CIF">
-              <option value="CPT">
-              <option value="DAP">
-              <option value="DDP">
-            </datalist>
+            <input type="text" id="f-incoterms" placeholder="e.g. FOB, DAP, CIF"
+              autocomplete="off" autocorrect="off" spellcheck="false"
+              oninput="handleIncotermsChange(this.value);filterSuggest('f-incoterms','incoBox',INCO_LIST,this.value)"
+              onfocus="filterSuggest('f-incoterms','incoBox',INCO_LIST,this.value)"
+              onblur="setTimeout(()=>hidePortBox('incoBox'),150)"/>
+            <div id="incoBox" class="port-suggest-box"></div>
+          </div>
+          <div class="form-group">
+            <label>CBM</label>
+            <input type="number" id="f-cbm" placeholder="0.00" min="0" step="0.01"/>
           </div>
         </div>
         <!-- Weight + Pallets -->
@@ -2411,7 +2403,7 @@ function shipmentToRow(s) {
       id: s.id, vessel: s.vessel, mmsi: s.mmsi,
       origin: s.origin, dest: s.dest, mode: s.mode || 'sea',
       loadDate: s.loadDate, arriveDate: s.arriveDate,
-      cargo: s.cargo, weight: s.weight, pallets: s.pallets,
+      cargo: s.cargo, weight: s.weight, pallets: s.pallets, cbm: s.cbm || '',
       carrier: s.carrier, incoterms: s.incoterms || '',
       localCost: s.localCost, localCcy: s.localCcy,
       freightCost: s.freightCost, freightCcy: s.freightCcy,
@@ -3717,6 +3709,7 @@ function openAddModal() {
   handleIncotermsChange('');
   document.getElementById('f-weight').value = '';
   document.getElementById('f-pallets').value = '';
+  document.getElementById('f-cbm').value = '';
   document.getElementById('f-carrier').value = '';
   document.getElementById('f-local-ccy').value = 'USD';
   setCcyValue('f-local-ccy', 'USD');
@@ -3751,6 +3744,7 @@ function submitAddShipment() {
   const cargo      = document.getElementById('f-cargo').value.trim();
   const weight     = document.getElementById('f-weight').value.trim();
   const pallets    = document.getElementById('f-pallets').value.trim();
+  const cbm        = document.getElementById('f-cbm').value.trim();
   const carrier    = document.getElementById('f-carrier').value.trim();
   const incoterms  = document.getElementById('f-incoterms').value;
   const localCcy   = document.getElementById('f-local-ccy').value;
@@ -3785,6 +3779,7 @@ function submitAddShipment() {
     s.incoterms   = incoterms;
     s.weight      = weight;
     s.pallets     = pallets;
+    s.cbm         = cbm;
     s.localCcy    = localCcy;   s.localCost   = localCost;
     s.freightCcy  = freightCcy; s.freightCost = freightCost;
     s.destCcy     = destCcy;    s.destCost    = destCost;
@@ -3820,7 +3815,7 @@ function submitAddShipment() {
   }
 
   const newShipment = makeShipment({
-    id, vessel, mmsi, origin, dest, cargo, weight, pallets, carrier, incoterms,
+    id, vessel, mmsi, origin, dest, cargo, weight, pallets, cbm, carrier, incoterms,
     loadDate, arriveDate,
     localCost, localCcy, freightCost, freightCcy, destCost, destCcy,
     timeline: [
@@ -4240,18 +4235,27 @@ const PORT_LIST = [
   'Busan, KR', 'Tokyo, JP', 'Yokohama, JP', 'Osaka, JP',
 ];
 
-function filterPortSuggestions(inputId, boxId, query) {
+const CARRIER_LIST = [
+  'MSC', 'Maersk', 'CMA CGM', 'COSCO', 'Hapag-Lloyd',
+  'Evergreen', 'ONE', 'HMM', 'ZIM', 'Yang Ming', 'PIL',
+];
+
+const INCO_LIST = [
+  'EXW', 'FCA', 'FAS', 'FOB', 'CFR', 'CIF', 'CPT', 'CIP', 'DAP', 'DPU', 'DDP',
+];
+
+// Generic suggest-box filter — works for ports, carriers, incoterms
+function filterSuggest(inputId, boxId, list, query) {
   const box = document.getElementById(boxId);
   if (!box) return;
   const q = query.trim().toLowerCase();
   const matches = q.length === 0
-    ? PORT_LIST.slice(0, 8)  // show first 8 on empty focus
-    : PORT_LIST.filter(p => p.toLowerCase().includes(q)).slice(0, 10);
+    ? list.slice(0, 8)
+    : list.filter(p => p.toLowerCase().includes(q)).slice(0, 10);
 
   if (matches.length === 0) { box.classList.remove('open'); return; }
 
   box.innerHTML = matches.map(p => {
-    // Bold the matching portion
     const idx = p.toLowerCase().indexOf(q);
     const hi  = q.length > 0 && idx >= 0
       ? p.slice(0, idx) + '<strong>' + p.slice(idx, idx + q.length) + '</strong>' + p.slice(idx + q.length)
@@ -4259,6 +4263,10 @@ function filterPortSuggestions(inputId, boxId, query) {
     return '<div class="port-suggest-item" onmousedown="selectPort(\'' + inputId + '\',\'' + boxId + '\',\'' + p.replace(/'/g,"\\'") + '\')">' + hi + '</div>';
   }).join('');
   box.classList.add('open');
+}
+
+function filterPortSuggestions(inputId, boxId, query) {
+  filterSuggest(inputId, boxId, PORT_LIST, query);
 }
 
 function selectPort(inputId, boxId, value) {
@@ -5213,7 +5221,7 @@ function logRowHtml(s, rowIdx) {
     + '<div><div style="font-size:0.625rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:var(--outline);">Container</div>'
     + '<div style="font-size:0.8125rem;color:var(--on-surface);margin-top:3px;">' + (s.cargo || '—') + (s.carrier ? ' · ' + s.carrier : '') + '</div></div>'
     + '<div><div style="font-size:0.625rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:var(--outline);">Weight / Pallets</div>'
-    + '<div style="font-size:0.8125rem;color:var(--on-surface);margin-top:3px;">' + (s.weight ? s.weight + ' kg' : '—') + (s.pallets ? ' · ' + s.pallets + ' pallets' : '') + '</div></div>'
+    + '<div style="font-size:0.8125rem;color:var(--on-surface);margin-top:3px;">' + (s.weight ? s.weight + ' kg' : '—') + (s.pallets ? ' · ' + s.pallets + ' pallets' : '') + (s.cbm ? ' · ' + s.cbm + ' CBM' : '') + '</div></div>'
     + '<div><div style="font-size:0.625rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:var(--outline);">Booked arrival</div>'
     + '<div style="font-size:0.8125rem;color:var(--on-surface);margin-top:3px;">' + (s.arriveDate || '—') + '</div></div>'
     + '</div>'
@@ -6007,6 +6015,7 @@ function openEditModal(idx) {
   document.getElementById('f-carrier').value        = s.carrier || '';
   document.getElementById('f-weight').value         = s.weight || '';
   document.getElementById('f-pallets').value        = s.pallets || '';
+  document.getElementById('f-cbm').value            = s.cbm || '';
   document.getElementById('f-local-ccy').value      = s.localCcy || 'USD';
   setCcyValue('f-local-ccy', s.localCcy || 'USD');
   document.getElementById('f-local-cost').value     = s.localCost || '';
