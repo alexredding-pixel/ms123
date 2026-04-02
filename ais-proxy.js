@@ -28,6 +28,20 @@ function safeEqual(a, b) {
   } catch { return false; }
 }
 
+// Normalise a raw AIS destination string to just the terminal port.
+// AIS destination is free-text typed by officers — common formats include:
+//   "SGSIN>GBFXT"       → "GBFXT"
+//   "SG SIN > LKCMB"   → "LKCMB"
+//   "CNSHA>GBFXT>DEHAM" → "DEHAM"  (multi-hop — take last)
+//   "FELIXSTOWE"        → "FELIXSTOWE"  (plain — unchanged)
+function normaliseAisDest(raw) {
+  if (!raw) return '';
+  const clean = raw.trim().toUpperCase();
+  if (!clean.includes('>')) return clean;
+  const parts = clean.split('>').map(p => p.trim()).filter(Boolean);
+  return parts[parts.length - 1];
+}
+
 // ── ANTHROPIC API (key stored as env var — never exposed to browser) ────────────
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || '';
 
@@ -317,9 +331,13 @@ async function inspectMessage(raw) {
 
     // ── ShipStaticData: log destination/ETA changes ───────────────────────────
     if (msg.MessageType === 'ShipStaticData') {
-      const sd   = msg.Message?.ShipStaticData || {};
-      const dest = (sd.Destination || '').trim().toUpperCase();
-      if (!dest || dest === 'UNKNOWN' || dest === '0') return;
+      const sd  = msg.Message?.ShipStaticData || {};
+      const raw = (sd.Destination || '').trim().toUpperCase();
+      if (!raw || raw === 'UNKNOWN' || raw === '0') return;
+
+      // Normalise AIS destination — officers often type the full route as
+      // "SGSIN>GBFXT" or "SG SIN > LKCMB". Extract the terminal port only.
+      const dest = normaliseAisDest(raw);
 
       let etaStr = null;
       if (sd.Eta) {
