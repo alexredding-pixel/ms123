@@ -2110,6 +2110,26 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
         <p style="font-size:0.75rem;color:var(--outline);margin-top:8px;">PDF only · max 5MB per file</p>
       </div>
 
+      <div class="form-divider"></div>
+
+      <!-- Item Details -->
+      <div class="form-section">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+          <div class="form-section-title" style="margin-bottom:0;">Item Details</div>
+          <button type="button" onclick="addItemRow()" style="display:flex;align-items:center;gap:4px;background:var(--surface-container-high);border:none;border-radius:8px;padding:6px 10px;font-size:0.8125rem;font-weight:700;font-family:inherit;color:var(--primary);cursor:pointer;transition:background 0.15s;">
+            <span class="material-symbols-outlined" style="font-size:16px;">add</span>
+            Add row
+          </button>
+        </div>
+        <!-- Header row -->
+        <div style="display:grid;grid-template-columns:1fr 100px 32px;gap:8px;margin-bottom:6px;padding:0 2px;">
+          <div style="font-size:0.6875rem;font-weight:700;color:var(--on-surface-variant);letter-spacing:0.04em;text-transform:uppercase;">Item Spec</div>
+          <div style="font-size:0.6875rem;font-weight:700;color:var(--on-surface-variant);letter-spacing:0.04em;text-transform:uppercase;">Qty</div>
+          <div></div>
+        </div>
+        <div id="itemRowsContainer" style="display:flex;flex-direction:column;gap:6px;"></div>
+      </div>
+
       </div><!-- /entryManual -->
 
       <!-- AUTO ENTRY CONTENT -->
@@ -2403,7 +2423,7 @@ function shipmentToRow(s) {
       id: s.id, vessel: s.vessel, mmsi: s.mmsi,
       origin: s.origin, dest: s.dest, mode: s.mode || 'sea',
       loadDate: s.loadDate, arriveDate: s.arriveDate,
-      cargo: s.cargo, weight: s.weight, pallets: s.pallets, cbm: s.cbm || '',
+      cargo: s.cargo, weight: s.weight, pallets: s.pallets, cbm: s.cbm || '', items: s.items || [],
       carrier: s.carrier, incoterms: s.incoterms || '',
       localCost: s.localCost, localCcy: s.localCcy,
       freightCost: s.freightCost, freightCcy: s.freightCcy,
@@ -3710,6 +3730,7 @@ function openAddModal() {
   document.getElementById('f-weight').value = '';
   document.getElementById('f-pallets').value = '';
   document.getElementById('f-cbm').value = '';
+  resetItemRows();
   document.getElementById('f-carrier').value = '';
   document.getElementById('f-local-ccy').value = 'USD';
   setCcyValue('f-local-ccy', 'USD');
@@ -3723,6 +3744,7 @@ function openAddModal() {
   document.getElementById('f-load-date').value = '';
   document.getElementById('f-arrive-date').value = '';
   hideVesselResults();
+  resetItemRows();
 }
 
 function closeAddModal() {
@@ -3745,6 +3767,7 @@ function submitAddShipment() {
   const weight     = document.getElementById('f-weight').value.trim();
   const pallets    = document.getElementById('f-pallets').value.trim();
   const cbm        = document.getElementById('f-cbm').value.trim();
+  const items      = getItemRows();
   const carrier    = document.getElementById('f-carrier').value.trim();
   const incoterms  = document.getElementById('f-incoterms').value;
   const localCcy   = document.getElementById('f-local-ccy').value;
@@ -3780,6 +3803,7 @@ function submitAddShipment() {
     s.weight      = weight;
     s.pallets     = pallets;
     s.cbm         = cbm;
+    s.items       = items;
     s.localCcy    = localCcy;   s.localCost   = localCost;
     s.freightCcy  = freightCcy; s.freightCost = freightCost;
     s.destCcy     = destCcy;    s.destCost    = destCost;
@@ -3815,7 +3839,7 @@ function submitAddShipment() {
   }
 
   const newShipment = makeShipment({
-    id, vessel, mmsi, origin, dest, cargo, weight, pallets, cbm, carrier, incoterms,
+    id, vessel, mmsi, origin, dest, cargo, weight, pallets, cbm, carrier, incoterms, items,
     loadDate, arriveDate,
     localCost, localCcy, freightCost, freightCcy, destCost, destCcy,
     timeline: [
@@ -4278,6 +4302,59 @@ function selectPort(inputId, boxId, value) {
 function hidePortBox(boxId) {
   const box = document.getElementById(boxId);
   if (box) box.classList.remove('open');
+}
+
+// -- ITEM DETAILS -------------------------------------------------------------
+// Dynamic rows of { spec, qty } — stored as s.items array on the shipment.
+
+function addItemRow(spec, qty) {
+  const container = document.getElementById('itemRowsContainer');
+  if (!container) return;
+  const idx = container.children.length;
+  const row = document.createElement('div');
+  row.className = 'item-detail-row';
+  row.style.cssText = 'display:grid;grid-template-columns:1fr 100px 32px;gap:8px;align-items:center;';
+  row.innerHTML =
+    '<input type="text" class="item-spec" placeholder="e.g. Steel coil, Grade A" value="' + esc(spec || '') + '"' +
+    ' style="background:var(--surface-container-high);border:none;outline:none;border-radius:10px;padding:10px 14px;font-size:0.875rem;font-family:inherit;color:var(--on-surface);width:100%;box-sizing:border-box;transition:box-shadow 0.15s;"/>' +
+    '<input type="number" class="item-qty" placeholder="0" min="0" value="' + esc(String(qty || '')) + '"' +
+    ' style="background:var(--surface-container-high);border:none;outline:none;border-radius:10px;padding:10px 12px;font-size:0.875rem;font-family:inherit;color:var(--on-surface);width:100%;box-sizing:border-box;transition:box-shadow 0.15s;text-align:right;"/>' +
+    '<button type="button" onclick="removeItemRow(this)" style="display:flex;align-items:center;justify-content:center;width:32px;height:32px;background:none;border:none;cursor:pointer;border-radius:8px;color:var(--outline);transition:background 0.12s,color 0.12s;" onmouseover="this.style.background=\'var(--error-container)\';this.style.color=\'var(--error)\';" onmouseout="this.style.background=\'none\';this.style.color=\'var(--outline)\';"><span class="material-symbols-outlined" style="font-size:16px;">close</span></button>';
+  container.appendChild(row);
+}
+
+function removeItemRow(btn) {
+  const row = btn.closest('.item-detail-row');
+  if (row) row.remove();
+  // If no rows left, the container is just empty — the section stays visible
+}
+
+function getItemRows() {
+  const rows = document.querySelectorAll('#itemRowsContainer .item-detail-row');
+  const items = [];
+  rows.forEach(row => {
+    const spec = row.querySelector('.item-spec')?.value.trim() || '';
+    const qty  = row.querySelector('.item-qty')?.value.trim() || '';
+    if (spec || qty) items.push({ spec, qty });
+  });
+  return items;
+}
+
+function loadItemRows(items) {
+  const container = document.getElementById('itemRowsContainer');
+  if (!container) return;
+  container.innerHTML = '';
+  if (Array.isArray(items) && items.length > 0) {
+    items.forEach(it => addItemRow(it.spec, it.qty));
+  } else {
+    addItemRow(); // always show at least one empty row
+  }
+}
+
+function resetItemRows() {
+  const container = document.getElementById('itemRowsContainer');
+  if (container) container.innerHTML = '';
+  addItemRow(); // reset to one empty row
 }
 
 // -- CONTAINER TYPE TOGGLE ----------------------------------------------------
@@ -6016,6 +6093,7 @@ function openEditModal(idx) {
   document.getElementById('f-weight').value         = s.weight || '';
   document.getElementById('f-pallets').value        = s.pallets || '';
   document.getElementById('f-cbm').value            = s.cbm || '';
+  loadItemRows(s.items || []);
   document.getElementById('f-local-ccy').value      = s.localCcy || 'USD';
   setCcyValue('f-local-ccy', s.localCcy || 'USD');
   document.getElementById('f-local-cost').value     = s.localCost || '';
