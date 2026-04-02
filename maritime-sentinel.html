@@ -3764,6 +3764,7 @@ function openAddModal() {
 
 function closeAddModal() {
   document.getElementById('addShipmentModal').classList.remove('open');
+  closeEditMode();
 }
 
 
@@ -3831,7 +3832,6 @@ function submitAddShipment() {
     saveShipments();
     renderTable();
     closeAddModal();
-    closeEditMode();
     return;
   }
 
@@ -6172,6 +6172,9 @@ function closeEditMode() {
   document.getElementById('submitAddShipment').textContent = 'Add Shipment';
   document.getElementById('f-arrive-date').disabled = false;
   document.getElementById('f-arrive-date').style.opacity = '1';
+  // Restore the Manual/Auto tabs (hidden during edit mode)
+  const tabs = document.getElementById('entryModeTabs');
+  if (tabs) tabs.style.display = '';
 }
 
 // -- BOOT ----------------------------------------------------------------------
@@ -6442,8 +6445,6 @@ window.addEventListener('load', async () => {
   document.getElementById('editShipmentBtn').addEventListener('click', () => {
     if (activeId !== null) { closeDetail(); openEditModal(activeId); }
   });
-  document.getElementById('closeAddModal').addEventListener('click', closeEditMode);
-  document.getElementById('cancelAddModal').addEventListener('click', closeEditMode);
 
   // ── B/L FILE INPUT (Auto Entry tab) ──────────────────────────────────────
   document.getElementById('blFileInput').addEventListener('change', (e) => {
