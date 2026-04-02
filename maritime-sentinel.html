@@ -2122,9 +2122,10 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
           </button>
         </div>
         <!-- Header row -->
-        <div style="display:grid;grid-template-columns:1fr 100px 32px;gap:8px;margin-bottom:6px;padding:0 2px;">
-          <div style="font-size:0.6875rem;font-weight:700;color:var(--on-surface-variant);letter-spacing:0.04em;text-transform:uppercase;">Item Spec</div>
+        <div style="display:grid;grid-template-columns:72px 72px 1fr 32px;gap:8px;margin-bottom:6px;padding:0 2px;">
           <div style="font-size:0.6875rem;font-weight:700;color:var(--on-surface-variant);letter-spacing:0.04em;text-transform:uppercase;">Qty</div>
+          <div style="font-size:0.6875rem;font-weight:700;color:var(--on-surface-variant);letter-spacing:0.04em;text-transform:uppercase;">Pallets</div>
+          <div style="font-size:0.6875rem;font-weight:700;color:var(--on-surface-variant);letter-spacing:0.04em;text-transform:uppercase;">Item Spec</div>
           <div></div>
         </div>
         <div id="itemRowsContainer" style="display:flex;flex-direction:column;gap:6px;"></div>
@@ -4307,19 +4308,21 @@ function hidePortBox(boxId) {
 // -- ITEM DETAILS -------------------------------------------------------------
 // Dynamic rows of { spec, qty } — stored as s.items array on the shipment.
 
-function addItemRow(spec, qty) {
+function addItemRow(spec, qty, pallets) {
   const container = document.getElementById('itemRowsContainer');
   if (!container) return;
-  const idx = container.children.length;
   const row = document.createElement('div');
   row.className = 'item-detail-row';
-  row.style.cssText = 'display:grid;grid-template-columns:1fr 100px 32px;gap:8px;align-items:center;';
+  row.style.cssText = 'display:grid;grid-template-columns:72px 72px 1fr 32px;gap:8px;align-items:center;';
+  const inputStyle = 'background:var(--surface-container-high);border:none;outline:none;border-radius:10px;padding:10px 12px;font-size:0.875rem;font-family:inherit;color:var(--on-surface);width:100%;box-sizing:border-box;transition:box-shadow 0.15s;';
   row.innerHTML =
+    '<input type="text" class="item-qty" placeholder="0" value="' + esc(String(qty || '')) + '"' +
+    ' style="' + inputStyle + 'text-align:center;" inputmode="numeric"/>' +
+    '<input type="text" class="item-pallets" placeholder="0" value="' + esc(String(pallets || '')) + '"' +
+    ' style="' + inputStyle + 'text-align:center;" inputmode="numeric"/>' +
     '<input type="text" class="item-spec" placeholder="e.g. Steel coil, Grade A" value="' + esc(spec || '') + '"' +
-    ' style="background:var(--surface-container-high);border:none;outline:none;border-radius:10px;padding:10px 14px;font-size:0.875rem;font-family:inherit;color:var(--on-surface);width:100%;box-sizing:border-box;transition:box-shadow 0.15s;"/>' +
-    '<input type="number" class="item-qty" placeholder="0" min="0" value="' + esc(String(qty || '')) + '"' +
-    ' style="background:var(--surface-container-high);border:none;outline:none;border-radius:10px;padding:10px 12px;font-size:0.875rem;font-family:inherit;color:var(--on-surface);width:100%;box-sizing:border-box;transition:box-shadow 0.15s;text-align:right;"/>' +
-    '<button type="button" onclick="removeItemRow(this)" style="display:flex;align-items:center;justify-content:center;width:32px;height:32px;background:none;border:none;cursor:pointer;border-radius:8px;color:var(--outline);transition:background 0.12s,color 0.12s;" onmouseover="this.style.background=\'var(--error-container)\';this.style.color=\'var(--error)\';" onmouseout="this.style.background=\'none\';this.style.color=\'var(--outline)\';"><span class="material-symbols-outlined" style="font-size:16px;">close</span></button>';
+    ' style="' + inputStyle + '"/>' +
+    '<button type="button" onclick="removeItemRow(this)" style="display:flex;align-items:center;justify-content:center;width:32px;height:32px;background:none;border:none;cursor:pointer;border-radius:8px;color:var(--outline);transition:background 0.12s,color 0.12s;" onmouseover="this.style.background='var(--error-container)';this.style.color='var(--error)';" onmouseout="this.style.background='none';this.style.color='var(--outline)';"><span class="material-symbols-outlined" style="font-size:16px;">close</span></button>';
   container.appendChild(row);
 }
 
@@ -4333,9 +4336,10 @@ function getItemRows() {
   const rows = document.querySelectorAll('#itemRowsContainer .item-detail-row');
   const items = [];
   rows.forEach(row => {
-    const spec = row.querySelector('.item-spec')?.value.trim() || '';
-    const qty  = row.querySelector('.item-qty')?.value.trim() || '';
-    if (spec || qty) items.push({ spec, qty });
+    const qty     = row.querySelector('.item-qty')?.value.trim() || '';
+    const pallets = row.querySelector('.item-pallets')?.value.trim() || '';
+    const spec    = row.querySelector('.item-spec')?.value.trim() || '';
+    if (spec || qty || pallets) items.push({ spec, qty, pallets });
   });
   return items;
 }
@@ -4345,7 +4349,7 @@ function loadItemRows(items) {
   if (!container) return;
   container.innerHTML = '';
   if (Array.isArray(items) && items.length > 0) {
-    items.forEach(it => addItemRow(it.spec, it.qty));
+    items.forEach(it => addItemRow(it.spec, it.qty, it.pallets));
   } else {
     addItemRow(); // always show at least one empty row
   }
