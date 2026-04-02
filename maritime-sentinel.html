@@ -2488,6 +2488,8 @@ async function syncShipmentsFromSupabase() {
     // Migrate: if s.eta is an intermediate ATA (arrivedAtFinal not set), clear it
     // so the booked/revised ETA shows correctly as the final destination ETA
     shipments.forEach(s => {
+      // Normalise any garbled AIS destination stored before the proxy fix was deployed
+      if (s.destination) s.destination = normaliseDest(s.destination);
       if (s.eta && s.eta.startsWith('ATA:') && !s.arrivedAtFinal) {
         // Store it as the last port stop note instead
         s.lastPortStop = s.eta.replace('ATA: ', '');
@@ -3515,14 +3517,31 @@ function normaliseDest(raw) {
 }
 
 function destMatchesFinal(s) {
-  // Returns true if the vessel's current AIS destination is the user's discharge port
-  if (!s.destination || !s.dest) return false;
-  const aisDest   = s.destination.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  // Returns true if the vessel's current AIS destination matches the user's discharge port.
+  // Checks s.destination (live/stored) plus lastEtaByDest keys (normalised by proxy).
+  if (!s.dest) return false;
   const userDest  = s.dest.toUpperCase().replace(/[^A-Z0-9]/g, '');
-  // Match on first 4+ chars of the port name (handles GBFXT vs Felixstowe, UK)
-  const aisShort  = aisDest.slice(0, 5);
-  const userWords = userDest.split(/\s+/);
-  return userWords.some(w => w.length >= 4 && (aisDest.includes(w.slice(0,5)) || w.slice(0,5).includes(aisShort)));
+  const userWords = userDest.split(/\s+/).filter(w => w.length >= 4);
+
+  function matchesUser(raw) {
+    if (!raw) return false;
+    const norm = normaliseDest(raw).replace(/[^A-Z0-9]/g, '');
+    const short = norm.slice(0, 5);
+    return userWords.some(w => norm.includes(w.slice(0,5)) || w.slice(0,5).includes(short));
+  }
+
+  // Check live AIS destination
+  if (matchesUser(s.destination)) return true;
+
+  // Also check lastEtaByDest keys — these are already normalised by the proxy
+  // so they may succeed even when s.destination is stale/garbled
+  if (s.lastEtaByDest) {
+    for (const key of Object.keys(s.lastEtaByDest)) {
+      if (matchesUser(key)) return true;
+    }
+  }
+
+  return false;
 }
 
 function getDisplayEta(s) {
@@ -3534,8 +3553,22 @@ function getDisplayEta(s) {
   const hasAisEta = s.eta && s.eta !== 'Awaiting live data...' && !s.eta.startsWith('ATA:');
 
   // AIS ETA directly to the final discharge port — most accurate
+  // Check both s.eta (live WS) and lastEtaByDest (proxy-normalised, survives page reload)
   if (hasAisEta && destMatchesFinal(s)) {
     return s.eta.replace('ETA: ', '');
+  }
+
+  // Check lastEtaByDest for a key matching the final destination
+  // This covers the case where the vessel has moved on but we have a stored ETA
+  if (s.lastEtaByDest && s.dest) {
+    const userWords = s.dest.toUpperCase().replace(/[^A-Z0-9]/g,'').split(/\s+/).filter(w => w.length >= 4);
+    for (const [key, etaVal] of Object.entries(s.lastEtaByDest)) {
+      const norm = key.replace(/[^A-Z0-9]/g,'');
+      const short = norm.slice(0,5);
+      if (userWords.some(w => norm.includes(w.slice(0,5)) || w.slice(0,5).includes(short))) {
+        return etaVal.replace('ETA: ', '');
+      }
+    }
   }
 
   // Booked date + slip — covers intermediate port delays cascading to final ETA
@@ -3552,6 +3585,16 @@ function etaSource(s) {
   if (s.eta && s.eta.startsWith('ATA:') && s.arrivedAtFinal) return 'ata';
   const hasAisEta = s.eta && s.eta !== 'Awaiting live data...' && !s.eta.startsWith('ATA:');
   if (hasAisEta && destMatchesFinal(s))   return 'ais-final';
+  // Check lastEtaByDest for a final-port match (covers page-reload case)
+  if (s.lastEtaByDest && s.dest) {
+    const userWords = s.dest.toUpperCase().replace(/[^A-Z0-9]/g,'').split(/\s+/).filter(w => w.length >= 4);
+    for (const key of Object.keys(s.lastEtaByDest)) {
+      const norm = key.replace(/[^A-Z0-9]/g,'');
+      const short = norm.slice(0,5);
+      if (userWords.some(w => norm.includes(w.slice(0,5)) || w.slice(0,5).includes(short)))
+        return 'ais-final';
+    }
+  }
   if (s.revisedEta)                       return 'revised';
   if (s.arriveDate)                        return 'booked';
   if (hasAisEta)                           return 'ais-next';
@@ -5529,8 +5572,12 @@ function hideLoginScreen() {
 
 async function onAuthSuccess() {
   hideLoginScreen();
-  // Force Leaflet to recalculate map dimensions now that it's visible
-  if (leafletMap) setTimeout(() => leafletMap.invalidateSize(), 100);
+  // Init map now that the container is visible and properly sized
+  // Use setTimeout to let the browser repaint before Leaflet measures dimensions
+  setTimeout(() => {
+    if (!leafletMap) initLeafletMap();
+    else leafletMap.invalidateSize();
+  }, 150);
   // Fetch proxy secret from Railway (authenticated endpoint)
   try {
     const PROXY = 'https://ms123-production.up.railway.app';
@@ -6598,9 +6645,7 @@ window.addEventListener('load', async () => {
     });
   });
 
-  // Init Leaflet map immediately for the preview
-  initLeafletMap();
-
+  // Map is initialised in onAuthSuccess() once the container is properly sized
   // AIS auto-connect happens in onAuthSuccess() after proxy secret is loaded
 });
 
