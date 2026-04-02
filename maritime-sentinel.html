@@ -2729,7 +2729,7 @@ function handleAISMessage(msg) {
     if (destChanged) {
       freezeWaypointSlip(s, (prevDest || '').toUpperCase());
     }
-    if (sd.Destination) s.destination = sd.Destination.trim();
+    if (sd.Destination) s.destination = normaliseDest(sd.Destination);
 
     if (sd.Eta) {
       const e = sd.Eta;
@@ -2737,7 +2737,7 @@ function handleAISMessage(msg) {
         const etaStr = 'ETA: ' + String(e.Month).padStart(2,'0') + '/' + String(e.Day).padStart(2,'0') + ' ' + String(e.Hour||0).padStart(2,'0') + ':' + String(e.Minute||0).padStart(2,'0') + ' UTC';
         s.eta = etaStr;
 
-        const dest = (sd.Destination || s.destination || '').trim().toUpperCase();
+        const dest = normaliseDest(sd.Destination || s.destination || '');
 
         // Track latest ETA seen for this destination
         if (dest) {
@@ -3503,6 +3503,16 @@ let filterStatus  = '';
 let filterDest    = '';
 let sortBy        = '';
 let currentPage   = 1;
+
+// Normalise raw AIS destination — "SGSIN>GBFXT" → "GBFXT", plain names unchanged.
+// Mirrors the proxy's normaliseAisDest so in-memory data matches what's in Supabase.
+function normaliseDest(raw) {
+  if (!raw) return '';
+  const clean = raw.trim().toUpperCase();
+  if (!clean.includes('>')) return clean;
+  const parts = clean.split('>').map(p => p.trim()).filter(Boolean);
+  return parts[parts.length - 1];
+}
 
 function destMatchesFinal(s) {
   // Returns true if the vessel's current AIS destination is the user's discharge port
