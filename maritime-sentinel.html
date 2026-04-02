@@ -6443,7 +6443,10 @@ window.addEventListener('load', async () => {
   });
   // ── EDIT SHIPMENT ─────────────────────────────────────────────────────────
   document.getElementById('editShipmentBtn').addEventListener('click', () => {
-    if (activeId !== null) { closeDetail(); openEditModal(activeId); }
+    if (activeId === null) return;
+    const idxToEdit = activeId; // capture before closeDetail() sets activeId = null
+    closeDetail();
+    openEditModal(idxToEdit);
   });
 
   // ── B/L FILE INPUT (Auto Entry tab) ──────────────────────────────────────
