@@ -5519,6 +5519,8 @@ function hideLoginScreen() {
 
 async function onAuthSuccess() {
   hideLoginScreen();
+  // Force Leaflet to recalculate map dimensions now that it's visible
+  if (leafletMap) setTimeout(() => leafletMap.invalidateSize(), 100);
   // Fetch proxy secret from Railway (authenticated endpoint)
   try {
     const PROXY = 'https://ms123-production.up.railway.app';
