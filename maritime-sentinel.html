@@ -1878,6 +1878,11 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
       <div style="display:flex;flex-direction:column;gap:6px;" id="dpDocUploadBtns"></div>
       <input type="file" id="docFileInput" accept=".pdf" style="display:none;"/>
     </div>
+
+    <div class="detail-section" id="dpItemsSection" style="display:none;">
+      <div class="detail-section-title">Item Details</div>
+      <div id="dpItemsList"></div>
+    </div>
   </div>
   <div class="detail-footer">
     <button class="detail-btn-primary" id="trackOnMapBtn">Track on Map</button>
@@ -2298,7 +2303,8 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
 function buildRegistry() {
   const reg = {};
   shipments.forEach((s, idx) => {
-    if (s.mmsi) reg[s.mmsi] = { idx, name: s.vessel };
+    if (s.mmsi && !s.completedAt && s.status !== 'Arrived')
+      reg[s.mmsi] = { idx, name: s.vessel };
   });
   return reg;
 }
@@ -3311,6 +3317,7 @@ function openDetail(idx) {
 
   document.getElementById('detailPanel').classList.add('open');
   renderDocSection(s);
+  renderItemSection(s);
 }
 
 function closeDetail() {
@@ -3412,14 +3419,20 @@ function initLeafletMap() {
     maxZoom: 19,
   }).addTo(leafletMap);
   L.control.zoom({ position: 'topright' }).addTo(leafletMap);
-  // Place markers for any vessel already with live coords
+  // Place markers for active vessels only (skip completed/arrived)
   shipments.forEach((s, idx) => {
-    if (s.lat != null && s.lng != null) addOrMoveMarker(idx);
+    if (s.lat != null && s.lng != null && !s.completedAt && s.status !== 'Arrived')
+      addOrMoveMarker(idx);
   });
 }
 
 function addOrMoveMarker(idx) {
   const s = shipments[idx];
+  // Remove marker and stop tracking if shipment is completed
+  if (s.completedAt || s.status === 'Arrived') {
+    if (vesselMarkers[idx]) { vesselMarkers[idx].remove(); delete vesselMarkers[idx]; }
+    return;
+  }
   const lat = s.lat;
   const lng = s.lng;
   const isEstimated = false;
@@ -3449,9 +3462,10 @@ function addOrMoveMarker(idx) {
 }
 
 function updateFleetStats() {
-  const tracked = shipments.filter(s => s.lat != null).length;
-  const delayed = shipments.filter(s => s.status === 'Delayed').length;
-  const inPort = shipments.filter(s => s.status === 'In Port' || s.status === 'At Anchor').length;
+  const active  = shipments.filter(s => !s.completedAt && s.status !== 'Arrived');
+  const tracked = active.filter(s => s.lat != null).length;
+  const delayed = active.filter(s => s.status === 'Delayed').length;
+  const inPort  = active.filter(s => s.status === 'In Port' || s.status === 'At Anchor').length;
   const normal = Math.max(0, tracked - delayed - inPort);
   const e = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   e('fleetCount', tracked || '--');
@@ -3466,7 +3480,7 @@ function expandMap() {
   document.getElementById('mapFooter').style.display = 'none';
   setTimeout(() => {
     leafletMap.invalidateSize();
-    const positions = shipments.filter(s => s.lat != null).map(s => [s.lat, s.lng]);
+    const positions = shipments.filter(s => s.lat != null && !s.completedAt && s.status !== 'Arrived').map(s => [s.lat, s.lng]);
     if (positions.length > 1) {
       leafletMap.fitBounds(positions, { padding: [60, 60], maxZoom: 6 });
     } else if (positions.length === 1) {
@@ -4463,10 +4477,11 @@ function renderAlerts() {
 
   const alerts = computeAlerts();
 
-  // Update footer stats
-  const tracked = shipments.length;
-  const slipped = shipments.filter(s => s.slipDays > 0).length;
-  const onTime  = shipments.filter(s => !s.slipDays || s.slipDays <= 0).length;
+  // Update footer stats — active shipments only (exclude completed/arrived)
+  const active  = shipments.filter(s => !s.completedAt && s.status !== 'Arrived');
+  const tracked = active.length;
+  const slipped = active.filter(s => s.slipDays > 0).length;
+  const onTime  = active.filter(s => !s.slipDays || s.slipDays <= 0).length;
   const el = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
   el('alertStatTracked', tracked);
   el('alertStatSlipped', slipped);
@@ -5774,6 +5789,41 @@ async function removeDoc(docType, shipmentId, s) {
   if (!confirm('Remove this ' + DOC_LABELS[docType] + '?')) return;
   await deleteDoc(shipmentId || s.id, docType);
   renderDocSection(s || shipments[activeId]);
+}
+
+// ── Render item details section in the shipment card ─────────────────────────
+function renderItemSection(s) {
+  const section = document.getElementById('dpItemsSection');
+  const list    = document.getElementById('dpItemsList');
+  if (!section || !list) return;
+
+  const items = Array.isArray(s.items) ? s.items.filter(it => it.spec || it.qty || it.pallets) : [];
+
+  if (items.length === 0) {
+    section.style.display = 'none';
+    return;
+  }
+
+  section.style.display = '';
+
+  // Header
+  const headerStyle = 'font-size:0.6875rem;font-weight:700;color:var(--on-surface-variant);letter-spacing:0.04em;text-transform:uppercase;padding:0 2px;';
+  const colStyle    = 'font-size:0.8125rem;color:var(--on-surface);padding:8px 2px;border-bottom:1px solid var(--surface-container-high);';
+  const labelStyle  = colStyle + 'font-weight:700;';
+
+  list.innerHTML =
+    '<div style="display:grid;grid-template-columns:52px 52px 1fr;gap:8px;margin-bottom:4px;">'
+    + '<div style="' + headerStyle + '">Qty</div>'
+    + '<div style="' + headerStyle + '">Pallets</div>'
+    + '<div style="' + headerStyle + '">Item Spec</div>'
+    + '</div>'
+    + items.map(it =>
+        '<div style="display:grid;grid-template-columns:52px 52px 1fr;gap:8px;">'
+        + '<div style="' + labelStyle + '">' + esc(it.qty || '—') + '</div>'
+        + '<div style="' + labelStyle + '">' + esc(it.pallets || '—') + '</div>'
+        + '<div style="' + colStyle + '">' + esc(it.spec || '—') + '</div>'
+        + '</div>'
+      ).join('');
 }
 
 // -- BILL OF LADING PARSING --------------------------------------------------
