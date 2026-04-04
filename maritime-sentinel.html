@@ -3516,25 +3516,95 @@ function normaliseDest(raw) {
   return parts[parts.length - 1];
 }
 
+// UN/LOCODE → port name fragments used for matching.
+// Add entries here whenever a new port LOCODE appears in AIS data.
+const LOCODE_MAP = {
+  // UK
+  'GBFXT': ['FELIXSTOWE'],
+  'GBLGP': ['LONDON','GATEWAY'],
+  'GBSOU': ['SOUTHAMPTON'],
+  'GBLIV': ['LIVERPOOL'],
+  'GBTIL': ['TILBURY'],
+  'GBIMM': ['IMMINGHAM'],
+  'GBHUL': ['HULL'],
+  'GBBRS': ['BRISTOL'],
+  // Europe
+  'DEHAM': ['HAMBURG'],
+  'NLRTM': ['ROTTERDAM'],
+  'BEANR': ['ANTWERP'],
+  'DEBRV': ['BREMERHAVEN'],
+  'FRLEH': ['HAVRE','LE HAVRE'],
+  'ESBCN': ['BARCELONA'],
+  'ESVLC': ['VALENCIA'],
+  'ESALG': ['ALGECIRAS'],
+  'GRPIR': ['PIRAEUS'],
+  'ITGOA': ['GENOA'],
+  // Asia
+  'CNSHA': ['SHANGHAI'],
+  'CNNBO': ['NINGBO'],
+  'CNSHE': ['SHENZHEN'],
+  'CNQIN': ['QINGDAO'],
+  'CNTAO': ['QINGDAO'],
+  'CNTSN': ['TIANJIN'],
+  'HKHKG': ['HONG KONG','HONGKONG'],
+  'SGSIN': ['SINGAPORE'],
+  'MYPKG': ['KLANG','PORT KLANG'],
+  'MYTPP': ['TANJUNG','PELEPAS'],
+  // India / Middle East
+  'INNSA': ['NHAVA','SHEVA'],
+  'INMUN': ['MUNDRA'],
+  'INMAA': ['CHENNAI'],
+  'AEDXB': ['DUBAI'],
+  'AEJEA': ['JEBEL','ALI'],
+  'LKCMB': ['COLOMBO'],
+  // Americas
+  'USNYC': ['NEW YORK'],
+  'USLAX': ['LOS ANGELES'],
+  'USLGB': ['LONG BEACH'],
+  'USHOU': ['HOUSTON'],
+  'USSAV': ['SAVANNAH'],
+  // Africa / Oceania
+  'ZADUR': ['DURBAN'],
+  'ZACPT': ['CAPE TOWN'],
+  'KEOMB': ['MOMBASA'],
+  'AUSYD': ['SYDNEY'],
+  'AUMEL': ['MELBOURNE'],
+  'KRPUS': ['BUSAN'],
+};
+
 function destMatchesFinal(s) {
-  // Returns true if the vessel's current AIS destination matches the user's discharge port.
-  // Checks s.destination (live/stored) plus lastEtaByDest keys (normalised by proxy).
   if (!s.dest) return false;
-  const userDest  = s.dest.toUpperCase().replace(/[^A-Z0-9]/g, '');
-  const userWords = userDest.split(/\s+/).filter(w => w.length >= 4);
+
+  // Split user dest into words BEFORE stripping — so "London Gateway, UK"
+  // becomes ['LONDON', 'GATEWAY', 'UK'] not ['LONDONGATEWAYUK']
+  const userWords = s.dest.toUpperCase()
+    .replace(/[^A-Z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length >= 3);
 
   function matchesUser(raw) {
     if (!raw) return false;
-    const norm = normaliseDest(raw).replace(/[^A-Z0-9]/g, '');
-    const short = norm.slice(0, 5);
-    return userWords.some(w => norm.includes(w.slice(0,5)) || w.slice(0,5).includes(short));
+    const norm = normaliseDest(raw).trim();
+
+    // 1. Direct LOCODE lookup — most reliable
+    const locodeWords = LOCODE_MAP[norm];
+    if (locodeWords) {
+      return locodeWords.some(lw =>
+        userWords.some(uw => uw.includes(lw.replace(/\s+/g,'').slice(0,5))
+                          || lw.replace(/\s+/g,'').slice(0,5).includes(uw.slice(0,5)))
+      );
+    }
+
+    // 2. Fuzzy word match — for plain text destinations like "FELIXSTOWE"
+    const normClean = norm.replace(/[^A-Z0-9]/g, '');
+    return userWords.some(w => {
+      const wc = w.replace(/[^A-Z0-9]/g,'');
+      return wc.length >= 4 && (normClean.includes(wc.slice(0,5)) || wc.slice(0,5).includes(normClean.slice(0,5)));
+    });
   }
 
-  // Check live AIS destination
   if (matchesUser(s.destination)) return true;
 
-  // Also check lastEtaByDest keys — these are already normalised by the proxy
-  // so they may succeed even when s.destination is stale/garbled
   if (s.lastEtaByDest) {
     for (const key of Object.keys(s.lastEtaByDest)) {
       if (matchesUser(key)) return true;

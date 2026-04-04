@@ -42,6 +42,81 @@ function normaliseAisDest(raw) {
   return parts[parts.length - 1];
 }
 
+// UN/LOCODE → port name fragments — mirrors the dashboard LOCODE_MAP
+const LOCODE_MAP = {
+  'GBFXT': ['FELIXSTOWE'],
+  'GBLGP': ['LONDON','GATEWAY'],
+  'GBSOU': ['SOUTHAMPTON'],
+  'GBLIV': ['LIVERPOOL'],
+  'GBTIL': ['TILBURY'],
+  'GBIMM': ['IMMINGHAM'],
+  'GBHUL': ['HULL'],
+  'DEHAM': ['HAMBURG'],
+  'NLRTM': ['ROTTERDAM'],
+  'BEANR': ['ANTWERP'],
+  'DEBRV': ['BREMERHAVEN'],
+  'FRLEH': ['HAVRE','LE HAVRE'],
+  'ESBCN': ['BARCELONA'],
+  'ESVLC': ['VALENCIA'],
+  'ESALG': ['ALGECIRAS'],
+  'GRPIR': ['PIRAEUS'],
+  'ITGOA': ['GENOA'],
+  'CNSHA': ['SHANGHAI'],
+  'CNNBO': ['NINGBO'],
+  'CNSHE': ['SHENZHEN'],
+  'CNQIN': ['QINGDAO'],
+  'CNTAO': ['QINGDAO'],
+  'CNTSN': ['TIANJIN'],
+  'HKHKG': ['HONG KONG','HONGKONG'],
+  'SGSIN': ['SINGAPORE'],
+  'MYPKG': ['KLANG','PORT KLANG'],
+  'MYTPP': ['TANJUNG','PELEPAS'],
+  'INNSA': ['NHAVA','SHEVA'],
+  'INMUN': ['MUNDRA'],
+  'INMAA': ['CHENNAI'],
+  'AEDXB': ['DUBAI'],
+  'AEJEA': ['JEBEL','ALI'],
+  'LKCMB': ['COLOMBO'],
+  'USNYC': ['NEW YORK'],
+  'USLAX': ['LOS ANGELES'],
+  'USLGB': ['LONG BEACH'],
+  'USHOU': ['HOUSTON'],
+  'USSAV': ['SAVANNAH'],
+  'ZADUR': ['DURBAN'],
+  'ZACPT': ['CAPE TOWN'],
+  'KEOMB': ['MOMBASA'],
+  'AUSYD': ['SYDNEY'],
+  'AUMEL': ['MELBOURNE'],
+  'KRPUS': ['BUSAN'],
+};
+
+// Returns true if aisDest (LOCODE or plain text) matches the user's discharge port string
+function destIsFinal(aisDest, userDest) {
+  if (!aisDest || !userDest) return false;
+  const norm = normaliseAisDest(aisDest);
+  // Split user dest into words BEFORE stripping so "London Gateway, UK" → ['LONDON','GATEWAY','UK']
+  const userWords = userDest.toUpperCase()
+    .replace(/[^A-Z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length >= 3);
+
+  // 1. LOCODE lookup
+  const locodeWords = LOCODE_MAP[norm];
+  if (locodeWords) {
+    return locodeWords.some(lw =>
+      userWords.some(uw => uw.includes(lw.replace(/\s+/g,'').slice(0,5))
+                        || lw.replace(/\s+/g,'').slice(0,5).includes(uw.slice(0,5)))
+    );
+  }
+
+  // 2. Fuzzy plain-text match
+  const nc = norm.replace(/[^A-Z0-9]/g,'');
+  return userWords.some(w => {
+    const wc = w.replace(/[^A-Z0-9]/g,'');
+    return wc.length >= 4 && (nc.includes(wc.slice(0,5)) || wc.slice(0,5).includes(nc.slice(0,5)));
+  });
+}
+
 // ── ANTHROPIC API (key stored as env var — never exposed to browser) ────────────
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || '';
 
@@ -238,14 +313,9 @@ async function logArrivalEvent(mmsi, destination, lat, lng, timestamp) {
   console.log('[arrival] ' + mmsi + ' arrived at ' + dest + ' @ ' + (timestamp || 'now'));
 
   // Fire arrival and delay notifications (async, fire-and-forget)
-  const isFinal = false; // proxy doesn't know final dest — dashboard handles that
-  // We detect isFinal by checking if dest appears in the shipment's dest field
   getShipmentForMmsi(mmsi).then(s => {
     if (!s) return;
-    const sd = dest.replace(/[^A-Z0-9]/g,'').slice(0,5);
-    const ud = (s.dest||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
-    const fin = ud.split(/\s+/).some(w => w.length >= 4 &&
-      (sd.includes(w.slice(0,5)) || w.slice(0,5).includes(sd)));
+    const fin = destIsFinal(dest, s.dest || '');
     notifyArrival(mmsi, dest, timestamp ? new Date(timestamp).toLocaleString('en-GB') : 'now', fin);
   }).catch(() => {});
 }
