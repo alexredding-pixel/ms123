@@ -893,6 +893,32 @@ async function bootstrapMmsis() {
   }
 }
 
+// Seed firstEtaSeen from voyage_events so ETA drift detection survives restarts.
+// For each mmsi+dest pair, the earliest event with an ETA is the baseline.
+async function seedFirstEtaSeen() {
+  try {
+    const res = await supabase('GET', 'voyage_events', null,
+      'select=mmsi,destination,eta,timestamp&eta=not.is.null&order=timestamp.asc'
+    );
+    if (!res.ok || !Array.isArray(res.data)) return;
+    let count = 0;
+    for (const row of res.data) {
+      if (!row.mmsi || !row.destination || !row.eta) continue;
+      // Skip ATA/ATD entries
+      if (row.destination.startsWith('ATA:') || row.destination.startsWith('ATD:')) continue;
+      const key = String(row.mmsi) + '_' + row.destination;
+      // Only set if not already present — earliest row wins (order=timestamp.asc)
+      if (!firstEtaSeen[key]) {
+        firstEtaSeen[key] = row.eta;
+        count++;
+      }
+    }
+    if (count > 0) console.log('[bootstrap] Seeded ' + count + ' ETA baselines from voyage_events');
+  } catch(e) {
+    console.error('[bootstrap] Error seeding ETA baselines:', e.message);
+  }
+}
+
 // ── START ─────────────────────────────────────────────────────────────────────
 loadConfig();
 httpServer.listen(PROXY_PORT, async () => {
@@ -908,6 +934,9 @@ httpServer.listen(PROXY_PORT, async () => {
 
   // Always try to load MMSIs from Supabase on startup
   await bootstrapMmsis();
+
+  // Restore ETA drift baselines so notifications survive restarts
+  await seedFirstEtaSeen();
 
   if (apiKey) {
     if (trackedMmsis.length > 0) {

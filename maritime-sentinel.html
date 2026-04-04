@@ -5642,12 +5642,20 @@ function hideLoginScreen() {
 
 async function onAuthSuccess() {
   hideLoginScreen();
-  // Init map now that the container is visible and properly sized
-  // Use setTimeout to let the browser repaint before Leaflet measures dimensions
-  setTimeout(() => {
-    if (!leafletMap) initLeafletMap();
-    else leafletMap.invalidateSize();
-  }, 150);
+  // Init map only once the container has real pixel dimensions.
+  // ResizeObserver fires as soon as the element is painted — no timing guesswork.
+  const mapEl = document.getElementById('leaflet-map');
+  if (mapEl) {
+    const ro = new ResizeObserver((entries, observer) => {
+      const { width, height } = entries[0].contentRect;
+      if (width > 0 && height > 0) {
+        observer.disconnect(); // only need one successful measurement
+        if (!leafletMap) initLeafletMap();
+        else leafletMap.invalidateSize();
+      }
+    });
+    ro.observe(mapEl);
+  }
   // Fetch proxy secret from Railway (authenticated endpoint)
   try {
     const PROXY = 'https://ms123-production.up.railway.app';
