@@ -88,6 +88,11 @@ const LOCODE_MAP = {
   'AUSYD': ['SYDNEY'],
   'AUMEL': ['MELBOURNE'],
   'KRPUS': ['BUSAN'],
+  'MAPTM': ['TANGER'],
+  'LKCMB': ['COLOMBO'],
+  'USBOS': ['BOSTON'],
+  'USORF': ['NORFOLK'],
+  'PNCT' : ['NEWARK'],
 };
 
 // Returns true if aisDest (LOCODE or plain text) matches the user's discharge port string
