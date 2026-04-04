@@ -2126,6 +2126,16 @@ body.panel-open .main { transition: padding-right 0.35s cubic-bezier(0.4,0,0.2,1
             Add row
           </button>
         </div>
+        <!-- HS Code — single value for the shipment -->
+        <div class="form-row" style="margin-bottom:12px;">
+          <div class="form-group">
+            <label>HS Code</label>
+            <input type="text" id="f-hs-code" placeholder="e.g. 72041000"
+              style="font-family:'DM Mono',monospace;font-size:0.8125rem;"
+              autocomplete="off" maxlength="12"/>
+          </div>
+          <div class="form-group"></div>
+        </div>
         <!-- Header row -->
         <div style="display:grid;grid-template-columns:72px 72px 1fr 32px;gap:8px;margin-bottom:6px;padding:0 2px;">
           <div style="font-size:0.6875rem;font-weight:700;color:var(--on-surface-variant);letter-spacing:0.04em;text-transform:uppercase;">Qty</div>
@@ -2438,7 +2448,7 @@ function shipmentToRow(s) {
       id: s.id, vessel: s.vessel, mmsi: s.mmsi,
       origin: s.origin, dest: s.dest, mode: s.mode || 'sea',
       loadDate: s.loadDate, arriveDate: s.arriveDate,
-      cargo: s.cargo, weight: s.weight, pallets: s.pallets, cbm: s.cbm || '', items: s.items || [],
+      cargo: s.cargo, weight: s.weight, pallets: s.pallets, cbm: s.cbm || '', hsCode: s.hsCode || '', items: s.items || [],
       carrier: s.carrier, incoterms: s.incoterms || '',
       localCost: s.localCost, localCcy: s.localCcy,
       freightCost: s.freightCost, freightCcy: s.freightCcy,
@@ -3876,6 +3886,7 @@ function openAddModal() {
   document.getElementById('f-weight').value = '';
   document.getElementById('f-pallets').value = '';
   document.getElementById('f-cbm').value = '';
+  const hsEl = document.getElementById('f-hs-code'); if (hsEl) hsEl.value = '';
   resetItemRows();
   document.getElementById('f-carrier').value = '';
   document.getElementById('f-local-ccy').value = 'USD';
@@ -3914,6 +3925,7 @@ function submitAddShipment() {
   const weight     = document.getElementById('f-weight').value.trim();
   const pallets    = document.getElementById('f-pallets').value.trim();
   const cbm        = document.getElementById('f-cbm').value.trim();
+  const hsCode     = (document.getElementById('f-hs-code')?.value || '').trim();
   const items      = getItemRows();
   const carrier    = document.getElementById('f-carrier').value.trim();
   const incoterms  = document.getElementById('f-incoterms').value;
@@ -3950,6 +3962,7 @@ function submitAddShipment() {
     s.weight      = weight;
     s.pallets     = pallets;
     s.cbm         = cbm;
+    s.hsCode      = hsCode;
     s.items       = items;
     s.localCcy    = localCcy;   s.localCost   = localCost;
     s.freightCcy  = freightCcy; s.freightCost = freightCost;
@@ -3985,7 +3998,7 @@ function submitAddShipment() {
   }
 
   const newShipment = makeShipment({
-    id, vessel, mmsi, origin, dest, cargo, weight, pallets, cbm, carrier, incoterms, items,
+    id, vessel, mmsi, origin, dest, cargo, weight, pallets, cbm, hsCode, carrier, incoterms, items,
     loadDate, arriveDate,
     localCost, localCcy, freightCost, freightCcy, destCost, destCcy,
     timeline: [
@@ -5942,33 +5955,45 @@ function renderItemSection(s) {
   const list    = document.getElementById('dpItemsList');
   if (!section || !list) return;
 
-  const items = Array.isArray(s.items) ? s.items.filter(it => it.spec || it.qty || it.pallets) : [];
+  const items  = Array.isArray(s.items) ? s.items.filter(it => it.spec || it.qty || it.pallets) : [];
+  const hsCode = s.hsCode || '';
 
-  if (items.length === 0) {
+  if (items.length === 0 && !hsCode) {
     section.style.display = 'none';
     return;
   }
 
   section.style.display = '';
 
-  // Header
   const headerStyle = 'font-size:0.6875rem;font-weight:700;color:var(--on-surface-variant);letter-spacing:0.04em;text-transform:uppercase;padding:0 2px;';
   const colStyle    = 'font-size:0.8125rem;color:var(--on-surface);padding:8px 2px;border-bottom:1px solid var(--surface-container-high);';
   const labelStyle  = colStyle + 'font-weight:700;';
 
-  list.innerHTML =
-    '<div style="display:grid;grid-template-columns:52px 52px 1fr;gap:8px;margin-bottom:4px;">'
-    + '<div style="' + headerStyle + '">Qty</div>'
-    + '<div style="' + headerStyle + '">Pallets</div>'
-    + '<div style="' + headerStyle + '">Item Spec</div>'
-    + '</div>'
-    + items.map(it =>
-        '<div style="display:grid;grid-template-columns:52px 52px 1fr;gap:8px;">'
-        + '<div style="' + labelStyle + '">' + esc(it.qty || '—') + '</div>'
-        + '<div style="' + labelStyle + '">' + esc(it.pallets || '—') + '</div>'
-        + '<div style="' + colStyle + '">' + esc(it.spec || '—') + '</div>'
-        + '</div>'
-      ).join('');
+  // HS Code row — shown above item lines if present
+  const hsHtml = hsCode
+    ? '<div style="display:flex;align-items:baseline;gap:12px;padding:6px 2px 10px;border-bottom:1px solid var(--surface-container-high);margin-bottom:8px;">'
+      + '<div style="' + headerStyle + 'white-space:nowrap;">HS Code</div>'
+      + '<div style="font-size:0.875rem;font-weight:700;color:var(--on-surface);font-family:\'DM Mono\',monospace;">' + esc(hsCode) + '</div>'
+      + '</div>'
+    : '';
+
+  // Item rows
+  const itemsHtml = items.length > 0
+    ? '<div style="display:grid;grid-template-columns:52px 52px 1fr;gap:8px;margin-bottom:4px;">'
+      + '<div style="' + headerStyle + '">Qty</div>'
+      + '<div style="' + headerStyle + '">Pallets</div>'
+      + '<div style="' + headerStyle + '">Item Spec</div>'
+      + '</div>'
+      + items.map(it =>
+          '<div style="display:grid;grid-template-columns:52px 52px 1fr;gap:8px;">'
+          + '<div style="' + labelStyle + '">' + esc(it.qty || '—') + '</div>'
+          + '<div style="' + labelStyle + '">' + esc(it.pallets || '—') + '</div>'
+          + '<div style="' + colStyle + '">' + esc(it.spec || '—') + '</div>'
+          + '</div>'
+        ).join('')
+    : '';
+
+  list.innerHTML = hsHtml + itemsHtml;
 }
 
 // -- BILL OF LADING PARSING --------------------------------------------------
@@ -6043,6 +6068,7 @@ function showExtractedFields(p) {
     ['Weight',          p.weight_kg ? p.weight_kg + ' kg' : null],
     ['Pallets',         p.pallets],
     ['Incoterms',       p.incoterms],
+    ['HS Code',         p.hs_code],
     ['Cargo',           p.description],
   ];
   grid.innerHTML = fields.filter(([,v]) => v !== null && v !== undefined).map(([label, val]) =>
@@ -6104,10 +6130,11 @@ function fillFormFromBL(p, file) {
   if (p.weight_kg)      document.getElementById('f-weight').value        = p.weight_kg;
   if (p.pallets)        document.getElementById('f-pallets').value       = p.pallets;
   if (p.incoterms)      { document.getElementById('f-incoterms').value = p.incoterms; handleIncotermsChange(p.incoterms); }
+  if (p.hs_code) { const el = document.getElementById('f-hs-code'); if (el) el.value = p.hs_code; }
 
   // Highlight pre-filled fields so user knows what was auto-filled
   ['f-vessel-name','f-mmsi','f-container','f-order','f-origin','f-dest','f-load-date',
-   'f-arrive-date','f-carrier','f-weight','f-pallets','f-incoterms']
+   'f-arrive-date','f-carrier','f-weight','f-pallets','f-incoterms','f-hs-code']
     .forEach(id => {
       const el = document.getElementById(id);
       if (el && el.value) {
@@ -6292,6 +6319,7 @@ function openEditModal(idx) {
   document.getElementById('f-weight').value         = s.weight || '';
   document.getElementById('f-pallets').value        = s.pallets || '';
   document.getElementById('f-cbm').value            = s.cbm || '';
+  const hsEl = document.getElementById('f-hs-code'); if (hsEl) hsEl.value = s.hsCode || '';
   loadItemRows(s.items || []);
   document.getElementById('f-local-ccy').value      = s.localCcy || 'USD';
   setCcyValue('f-local-ccy', s.localCcy || 'USD');

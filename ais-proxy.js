@@ -720,6 +720,7 @@ Return this exact structure (use null for any field not found):
   "weight_kg": "gross weight as number only, null if not found",
   "pallets": "number of pallets or packages as integer, null if not found",
   "incoterms": "EXW/FCA/FOB/CFR/CIF/CPT/DAP if stated, else null",
+  "hs_code": "HS/HTS tariff code for the goods if stated (digits only, e.g. 72041000), else null",
   "description": "brief cargo description"
 }`;
 
