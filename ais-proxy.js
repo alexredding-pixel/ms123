@@ -712,7 +712,7 @@ Return this exact structure (use null for any field not found):
   "mmsi": "9-digit MMSI if shown, else null",
   "bl_number": "bill of lading reference number",
   "container_type": "40' or 20' or LCL",
-  "container_number": "container ID if shown, else null",
+  "container_number": "container ID (e.g. MSCU1234567) if shown, else null",
   "origin": "port of loading, city and country code e.g. Yantian, CN",
   "dest": "port of discharge, city and country code e.g. Felixstowe, UK",
   "load_date": "YYYY-MM-DD estimated departure, null if not found",
@@ -721,6 +721,7 @@ Return this exact structure (use null for any field not found):
   "pallets": "number of pallets or packages as integer, null if not found",
   "incoterms": "EXW/FCA/FOB/CFR/CIF/CPT/DAP if stated, else null",
   "hs_code": "HS/HTS tariff code for the goods if stated (digits only, e.g. 72041000), else null",
+  "po_number": "customer purchase order or reference number — look for a 4-digit number starting with 6 or 7 in any reference, PO, customer ref, or shipper ref field. Return digits only, null if not found",
   "description": "brief cargo description"
 }`;
 

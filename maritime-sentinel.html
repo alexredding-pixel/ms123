@@ -6060,7 +6060,8 @@ function showExtractedFields(p) {
     ['Vessel',          p.vessel],
     ['Carrier',         p.carrier],
     ['Container Type',  p.container_type],
-    ['B/L Number',      p.bl_number],
+    ['Container Ref',   p.container_number],
+    ['Order / PO',      p.po_number],
     ['Origin',          p.origin],
     ['Destination',     p.dest],
     ['Loading Date',    p.load_date],
@@ -6105,10 +6106,14 @@ function fillFormFromBL(p, file) {
     }
   }
   if (p.mmsi) document.getElementById('f-mmsi').value = p.mmsi;
-  if (p.bl_number) {
-    // Put the B/L number into the Order field and compose the shipment ID
+  if (p.container_number) {
+    const cEl = document.getElementById('f-container');
+    if (cEl) cEl.value = p.container_number;
+    composeShipmentId();
+  }
+  if (p.po_number) {
     const oEl = document.getElementById('f-order');
-    if (oEl) oEl.value = p.bl_number;
+    if (oEl) oEl.value = p.po_number;
     composeShipmentId();
   }
   if (p.origin)         document.getElementById('f-origin').value        = p.origin;
